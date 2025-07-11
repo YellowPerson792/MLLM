@@ -1,6 +1,4 @@
 checkpoints/
-test_folder/
-models_cache/
 __pycache__/
 huggingface_token
 trained_models/
