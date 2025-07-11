@@ -5,44 +5,52 @@ import os
 from PIL import Image
 import binascii
 import base64
+import random
 
-dataset = load_dataset("uoft-cs/cifar10", split="train")
-# dataset = dataset.filter(lambda example: example["label"] in [3, 6])
+DATASET = "ylecun/mnist"
+# DATASET = "uoft-cs/cifar10"
+# DATASET = "tanganke/stl10"
+dataset = load_dataset(DATASET, split="train")
+dataset = dataset.shuffle(seed=42)
 
-# 二分类标注
-# def relabel(example):
-#     example["label"] = 0 if example["label"] == 3 else 1
-#     return example
-
-# dataset = dataset.map(relabel)
-
-def convert_to_bytes(example):
+def convert(example):
     buffer = io.BytesIO()
-    example["img"].save(buffer, format="JPEG")
+    example["image"].save(buffer, format="JPEG", quality=90, optimize=False, progressive=False)
     byte_data = buffer.getvalue()
     example["byte_array"] = byte_data
     example["hex"] = binascii.hexlify(byte_data).decode("utf-8")
-    example["base64"] = base64.b64encode(byte_data).decode("utf-8")
     return example
 
-dataset = dataset.map(convert_to_bytes, remove_columns=["img"])
+dataset = dataset.map(convert, remove_columns=["image"])
 
-with open("/root/autodl-tmp/MLLM/datasets/cifar10_jpeg.jsonl", "w") as f:
+with open(f"/root/autodl-tmp/MLLM/datasets/{os.path.basename(DATASET)}/{os.path.basename(DATASET)}_jpeg_factory.jsonl", "w") as f:
     for example in dataset:
         f.write(json.dumps({
             "label": example["label"],
             "byte_array": list(example["byte_array"]),
             "hex": example['hex'],
-            'base64': example['base64']
         }) + "\n")
-example = dataset[40]
 
-print(f"标签: {example['label']}")
-print(f"图像字节流长度: {len(example['byte_array'])} 字节")
-
-os.makedirs("/root/autodl-tmp/MLLM/datasets/cifar10_images", exist_ok=True)
-
-img = Image.open(io.BytesIO(example["byte_array"]))  
-img.save(f"/root/autodl-tmp/MLLM/datasets/cifar10_images/sample_0_label_{example['label']}.jpeg")
+indices = random.sample(range(len(dataset)), 1000)  # 从中随机选 100 个不重复的索引
+small_dataset = dataset.select(indices)
+with open(f"/root/autodl-tmp/MLLM/datasets/{os.path.basename(DATASET)}/{os.path.basename(DATASET)}_jpeg_small_factory.jsonl", "w") as f:
+    for example in small_dataset:
+        f.write(json.dumps({
+            "label": example["label"],
+            "byte_array": list(example["byte_array"]),
+            "hex": example['hex'],
+        }) + "\n")
+        
+length_sum = 0
+for example in small_dataset:
+    length_sum = length_sum + len(example["byte_array"])
+    
+average = length_sum / len(small_dataset)
+print(f"Average byte array length: {average}")
+    
+for i in range(0,10):
+    example = small_dataset.select([i])[0]
+    img = Image.open(io.BytesIO(example["byte_array"]))  
+    img.save(f"/root/autodl-tmp/MLLM/datasets/images/test_image_{i}.jpeg")
 
 

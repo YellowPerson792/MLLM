@@ -5,3 +5,5 @@ __pycache__/
 huggingface_token
 trained_models/
 datasets/
+models/
+LLaMA-Factory/
