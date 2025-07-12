@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --disable_wandb
+# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --disable_wandb
 
 import argparse
 import torch
@@ -20,10 +20,19 @@ from torchvision import transforms
 QUALITY = 25
 CACHE_TABLES_FN = "cache_tables.jpg"
 UNICODE_OFFSET = 10240
-MAX_SEQ_LEN = 2048
+MAX_SEQ_LEN = 3600
 preprocess = transforms.Compose([
     transforms.RandomResizedCrop((256, 256), scale=(1.0,1.0), ratio=(1.0,1.0), antialias=True)
 ])
+
+# 支持自动适配图片字段名和数据集名
+def get_dataset_and_field(dataset_mode):
+    if dataset_mode == 'mnist':
+        return 'ylecun/mnist', 'image'
+    elif dataset_mode == 'cifar10':
+        return 'uoft-cs/cifar10', 'img'
+    else:
+        raise ValueError(f"Unsupported dataset_mode: {dataset_mode}")
 
 def convert_img_to_bytes(img: Image.Image) -> str:
     img.save(CACHE_TABLES_FN, format="JPEG", quality=QUALITY, subsampling="4:2:0", streamtype=1, restart_marker_blocks=1)
@@ -32,8 +41,8 @@ def convert_img_to_bytes(img: Image.Image) -> str:
     data = buf.getvalue()
     return ''.join(chr(b + UNICODE_OFFSET) for b in data)
 
-def tokenize_example(example, tokenizer):
-    img = preprocess(example['image']) if preprocess else example['image'].resize((256,256))
+def tokenize_example(example, tokenizer, image_field):
+    img = preprocess(example[image_field]) if preprocess else example[image_field].resize((256,256))
     img = img.convert('RGB')
     tokenized = tokenizer(
         convert_img_to_bytes(img),
@@ -62,6 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('--bf16', action='store_true')
     parser.add_argument('--wandb_run_name', type=str)
     parser.add_argument('--disable_wandb', action='store_true')
+    parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist', 'cifar10'])
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -71,28 +81,36 @@ if __name__ == '__main__':
     config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=10, use_cache=False)
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     model.gradient_checkpointing_enable()
-    import torch.nn as nn
-    target_modules = [name.split('.')[-1] for name, m in model.named_modules() if isinstance(m, nn.Linear)]
+
+    # 手动指定 LoRA 插入层
+    LORA_TARGET = ["q_proj", "k_proj", "v_proj", "o_proj",  # 注意力
+               "gate_proj", "up_proj", "down_proj"]   # MLP
+    
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
         inference_mode=False,
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
-        modules_to_save=[],
+        target_modules=LORA_TARGET,
     )
     model = get_peft_model(model, peft_config).to(device)
 
-    ds = load_dataset('ylecun/mnist')
-    ds = ds.cast_column('image', ds['train'].features['image'])
+    # 自动适配数据集和图片字段
+    dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
+    ds = load_dataset(dataset_name)
+    # 兼容 mnist/cifar10
+    if args.dataset_mode == 'mnist':
+        ds = ds.cast_column('image', ds['train'].features['image'])
+    elif args.dataset_mode == 'cifar10':
+        ds = ds.cast_column('img', ds['train'].features['img'])
     train_ds = ds['train']
     test_ds = ds['test']
     if args.train_subset_size:
         train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
     if args.test_subset_size:
         test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
-    train_ds = train_ds.map(lambda ex: tokenize_example(ex, tokenizer), batched=False, remove_columns=train_ds.column_names)
-    test_ds = test_ds.map(lambda ex: tokenize_example(ex, tokenizer), batched=False, remove_columns=test_ds.column_names)
+    train_ds = train_ds.map(lambda ex: tokenize_example(ex, tokenizer, image_field), batched=False, remove_columns=train_ds.column_names)
+    test_ds = test_ds.map(lambda ex: tokenize_example(ex, tokenizer, image_field), batched=False, remove_columns=test_ds.column_names)
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -119,4 +137,3 @@ if __name__ == '__main__':
         tokenizer=tokenizer,
     )
     trainer.train()
-    trainer.evaluate()
