@@ -1,4 +1,4 @@
-# Example command: python run.py --query_vllm_server "local" --prefix_ratio 0.375 --temp 1.0 --topp 0.9 --topk 50 --test_image_path 'example_image_input/*.png' --repeat_generation 10 --seed 42 --output_dir "out"
+# Example command: python /root/autodl-tmp/MLLM/jpeg-lm/run.py --query_vllm_server "local" --prefix_ratio 0.7 --temp 1.0 --topp 0.9 --topk 50 --test_image_path 'example_image_input/*.png' --repeat_generation 1 --seed 42 --output_dir "/root/autodl-tmp/MLLM/jpeg-lm/out"
 
 import torch # version 2.1.2
 from torchvision import transforms # version 0.16.2
@@ -123,7 +123,7 @@ def main():
     temp, topp, topk = args.temp, args.topp, args.topk
     config_str = f"ratio{prefix_ratio}_temp{temp}_topp{topp}_topk{topk}"
 
-    image_path = sorted(glob.glob(args.test_image_path))
+    image_path = sorted(glob.glob(args.test_image_path))[:10]
     reader = []
     for _image_path in image_path:
         image = Image.open(_image_path).convert('RGB')

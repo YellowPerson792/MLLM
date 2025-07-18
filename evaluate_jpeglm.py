@@ -1,11 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example for MNIST: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --checkpoint_dir /root/autodl-fs/trained_models/jpeglm/checkpoint-1000 --dataset mnist --batch_size 2 --test_subset_size 1000 --use_xformers --use_deepspeed --use_sdpa
-# Example for CIFAR-10: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --use_xformers --use_deepspeed --use_sdpa
+# Example for MNIST: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
+# Example for CIFAR-10: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path //root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
 
 import argparse
 import io
 import torch
+import sys
+import os
+# 添加utils路径以导入统一的数据处理工具
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
+from data_utils import tokenize_example_for_evaluation, create_preprocess_transform
+
 from datasets import load_dataset
 from PIL import Image
 from tqdm import tqdm
@@ -20,15 +26,6 @@ def convert_img_to_bytes(img: Image.Image, quality: int):
         data = buf.getvalue()
     return ''.join(chr(b + 10240) for b in data)
 
-preprocess = transforms.Compose([transforms.RandomResizedCrop((256,256), scale=(1.0,1.0), ratio=(1.0,1.0), antialias=True)])
-QUALITY = 25
-
-def tokenize_example(example, tokenizer, max_seq_len, image_key):
-    img = preprocess(example[image_key]) if preprocess else example[image_key].resize((256,256))
-    img = img.convert("RGB")
-    jpeg_str = convert_img_to_bytes(img, QUALITY)
-    toks = tokenizer(jpeg_str, max_length=max_seq_len, padding="max_length", truncation=True)
-    return {"input_ids": toks["input_ids"], "attention_mask": toks["attention_mask"], "labels": example["label"]}
 
 def collate_fn(batch):
     ids = torch.tensor([item["input_ids"] for item in batch], dtype=torch.long)
@@ -45,26 +42,33 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test_subset_size", type=int)
+    parser.add_argument("--image_size", type=int, default=256, help="Image side length for preprocessing (e.g. 96 or 256)")
     parser.add_argument("--use_xformers", action='store_true')
     parser.add_argument("--use_deepspeed", action='store_true')
     parser.add_argument("--use_sdpa", action='store_true', help="Enable PyTorch SDPA attention acceleration")
+    parser.add_argument("--max_seq_len", type=int, default=None, help="Maximum token sequence length override")
     args = parser.parse_args()
     set_seed(args.seed)
-    
-    # Configure dataset-specific parameters
+    # Override max_seq_len if provided
+    if args.max_seq_len is not None:
+        max_seq_len = args.max_seq_len
+
+    # Configure dataset-specific parameters (unless overridden)
     if args.dataset == 'mnist':
         dataset_name = 'ylecun/mnist'
-        max_seq_len = 2048
+        if args.max_seq_len is None:
+            max_seq_len = 2048
         image_key = 'image'
         num_labels = 10
     elif args.dataset == 'cifar10':
         dataset_name = 'uoft-cs/cifar10'
-        max_seq_len = 3600
+        if args.max_seq_len is None:
+            max_seq_len = 3600
         image_key = 'img'
         num_labels = 10
-    
-    print(f"Evaluating on {args.dataset} dataset with max_seq_len={max_seq_len}")
-    
+
+    print(f"Evaluating on {args.dataset} dataset with max_seq_len={max_seq_len}, image_size={args.image_size}")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
@@ -90,21 +94,24 @@ if __name__ == "__main__":
         model = torch.compile(model)
     model.half()
     
+    # 设置动态preprocess
+    preprocess = create_preprocess_transform(args.image_size)
+
     # Load dataset
     ds = load_dataset(dataset_name)
-    
+
     # Handle different dataset structures
     if args.dataset == 'mnist':
         ds = ds.cast_column('image', ds['train'].features['image'])
         test = ds['test']
     elif args.dataset == 'cifar10':
         test = ds['test']
-    
+
     if args.test_subset_size:
         test = test.select(range(min(args.test_subset_size, len(test))))
-    
+
     # Apply tokenization with dataset-specific parameters
-    test = test.map(lambda ex: tokenize_example(ex, tokenizer, max_seq_len, image_key), 
+    test = test.map(lambda ex: tokenize_example_for_evaluation(ex, tokenizer, max_seq_len, image_key, preprocess), 
                    batched=False, remove_columns=test.column_names)
     loader = torch.utils.data.DataLoader(test, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4, pin_memory=True)
     total = len(test)

@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --disable_wandb
+# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 2048 --disable_wandb
 
 import argparse
 import torch
+import sys
+import os
+# 添加utils路径以导入统一的数据处理工具
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'utils'))
+from data_utils import tokenize_example_for_training, get_dataset_config, create_preprocess_transform
+
 from datasets import load_dataset
 from PIL import Image
 from transformers import (
@@ -15,15 +21,8 @@ from transformers import (
     set_seed,
 )
 from peft import get_peft_model, LoraConfig, TaskType
-from torchvision import transforms
 
-QUALITY = 25
-CACHE_TABLES_FN = "cache_tables.jpg"
-UNICODE_OFFSET = 10240
-MAX_SEQ_LEN = 3600
-preprocess = transforms.Compose([
-    transforms.RandomResizedCrop((256, 256), scale=(1.0,1.0), ratio=(1.0,1.0), antialias=True)
-])
+MAX_SEQ_LEN = 2048
 
 # 支持自动适配图片字段名和数据集名
 def get_dataset_and_field(dataset_mode):
@@ -33,24 +32,6 @@ def get_dataset_and_field(dataset_mode):
         return 'uoft-cs/cifar10', 'img'
     else:
         raise ValueError(f"Unsupported dataset_mode: {dataset_mode}")
-
-def convert_img_to_bytes(img: Image.Image) -> str:
-    img.save(CACHE_TABLES_FN, format="JPEG", quality=QUALITY, subsampling="4:2:0", streamtype=1, restart_marker_blocks=1)
-    buf = __import__('io').BytesIO()
-    img.save(buf, format="JPEG", quality=QUALITY, subsampling="4:2:0", streamtype=2, restart_marker_blocks=1)
-    data = buf.getvalue()
-    return ''.join(chr(b + UNICODE_OFFSET) for b in data)
-
-def tokenize_example(example, tokenizer, image_field):
-    img = preprocess(example[image_field]) if preprocess else example[image_field].resize((256,256))
-    img = img.convert('RGB')
-    tokenized = tokenizer(
-        convert_img_to_bytes(img),
-        max_length=MAX_SEQ_LEN,
-        padding='max_length',
-        truncation=True,
-    )
-    return {'input_ids': tokenized['input_ids'], 'attention_mask': tokenized['attention_mask'], 'labels': example['label']}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -72,15 +53,20 @@ if __name__ == '__main__':
     parser.add_argument('--wandb_run_name', type=str)
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist', 'cifar10'])
+    parser.add_argument('--max_seq_len', type=int, default=MAX_SEQ_LEN, help='Maximum token sequence length')
     args = parser.parse_args()
 
     set_seed(args.seed)
+    # 最大token长度
+    max_seq_len = args.max_seq_len
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
     config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=10, use_cache=False)
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name_or_path, config=config)
     model.gradient_checkpointing_enable()
+
+    # model.config.pad_token_id = tokenizer.pad_token_id      # 适用于Qwen
 
     # 手动指定 LoRA 插入层
     LORA_TARGET = ["q_proj", "k_proj", "v_proj", "o_proj",  # 注意力
@@ -109,8 +95,32 @@ if __name__ == '__main__':
         train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
     if args.test_subset_size:
         test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
-    train_ds = train_ds.map(lambda ex: tokenize_example(ex, tokenizer, image_field), batched=False, remove_columns=train_ds.column_names)
-    test_ds = test_ds.map(lambda ex: tokenize_example(ex, tokenizer, image_field), batched=False, remove_columns=test_ds.column_names)
+    # 添加多进程处理加速数据预处理
+    print("开始数据预处理...")
+    import time
+    start_time = time.time()
+    
+    # 创建预处理变换
+    preprocess = create_preprocess_transform(96)  # 96x96 图像大小
+    
+    train_ds = train_ds.map(
+        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, max_seq_len, preprocess), 
+        batched=False, 
+        remove_columns=train_ds.column_names,
+        num_proc=4,  # 使用4个进程并行处理
+        desc="处理训练数据"
+    )
+    test_ds = test_ds.map(
+        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, max_seq_len, preprocess), 
+        batched=False, 
+        remove_columns=test_ds.column_names,
+        num_proc=4,  # 使用4个进程并行处理
+        desc="处理测试数据"
+    )
+    
+    preprocess_time = time.time() - start_time
+    print(f"数据预处理完成，耗时: {preprocess_time:.2f}秒")
+    print("开始模型训练...")
 
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -136,4 +146,16 @@ if __name__ == '__main__':
         eval_dataset=test_ds,
         tokenizer=tokenizer,
     )
+    
+    # 添加训练时间监控
+    print("开始模型训练...")
+    training_start_time = time.time()
+    
     trainer.train()
+    
+    training_time = time.time() - training_start_time
+    total_time = time.time() - start_time
+    print(f"训练完成！")
+    print(f"纯训练时间: {training_time:.2f}秒 ({training_time/60:.1f}分钟)")
+    print(f"总时间(含预处理): {total_time:.2f}秒 ({total_time/60:.1f}分钟)")
+    print(f"预处理占比: {(preprocess_time/total_time)*100:.1f}%")
