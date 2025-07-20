@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # Example for MNIST: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
 # Example for CIFAR-10: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path //root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
+# Example with bit flip: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --bit_flip --bit_flip_prob 0.001 --max_seq_len 2048
 
 import argparse
 import io
@@ -47,6 +48,8 @@ if __name__ == "__main__":
     parser.add_argument("--use_deepspeed", action='store_true')
     parser.add_argument("--use_sdpa", action='store_true', help="Enable PyTorch SDPA attention acceleration")
     parser.add_argument("--max_seq_len", type=int, default=None, help="Maximum token sequence length override")
+    parser.add_argument("--bit_flip", action='store_true', help="Enable bit flip corruption for JPEG data")
+    parser.add_argument("--bit_flip_prob", type=float, default=0.001, help="Probability of flipping each bit (default: 0.001, i.e., 0.1%)")
     args = parser.parse_args()
     set_seed(args.seed)
     # Override max_seq_len if provided
@@ -68,6 +71,12 @@ if __name__ == "__main__":
         num_labels = 10
 
     print(f"Evaluating on {args.dataset} dataset with max_seq_len={max_seq_len}, image_size={args.image_size}")
+    
+    # 输出比特反转状态信息
+    if args.bit_flip:
+        print(f"启用比特反转模式，反转概率: {args.bit_flip_prob:.6f} ({args.bit_flip_prob*100:.4f}%)")
+    else:
+        print("未启用比特反转模式")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.backends.cudnn.benchmark = True
@@ -111,8 +120,9 @@ if __name__ == "__main__":
         test = test.select(range(min(args.test_subset_size, len(test))))
 
     # Apply tokenization with dataset-specific parameters
-    test = test.map(lambda ex: tokenize_example_for_evaluation(ex, tokenizer, max_seq_len, image_key, preprocess), 
-                   batched=False, remove_columns=test.column_names)
+    bit_flip_prob = args.bit_flip_prob if args.bit_flip else 0.0
+    test = test.map(lambda ex: tokenize_example_for_evaluation(ex, tokenizer, max_seq_len, image_key, preprocess, bit_flip_prob=bit_flip_prob), 
+                   batched=False, remove_columns=test.column_names, num_proc=4)
     loader = torch.utils.data.DataLoader(test, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4, pin_memory=True)
     total = len(test)
     correct = processed = 0

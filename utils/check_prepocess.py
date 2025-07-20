@@ -1,18 +1,23 @@
 # Example commands:
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset mnist
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset imagenet100
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --filter
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset mnist --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset imagenet100 --image_size 256
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --filter --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --bit_flip --bit_flip_prob 0.001 --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset mnist --bit_flip --bit_flip_prob 0.005 --image_size 96
 
 import os
 import argparse
 import glob
 import random
+import io
 from datasets import load_dataset
 from PIL import Image
 from torchvision import transforms
 from transformers import AutoTokenizer
 import math
+# 导入统一的数据处理工具
+from data_utils import convert_img_to_bytes, create_preprocess_transform, get_dataset_config
 
 # 支持自动适配图片字段名和数据集名
 def get_dataset_config(dataset_mode):
@@ -63,33 +68,24 @@ def load_imagenet100_subset():
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='cifar10', choices=['mnist', 'cifar10', 'imagenet100'], help='Dataset to process')
 parser.add_argument('--filter', action='store_true', help='Enable filtering by token length threshold')
+parser.add_argument('--image_size', type=int, default=96, help='Image side length for preprocessing (e.g. 96 or 256)')
+parser.add_argument('--bit_flip', action='store_true', help='Enable bit flip corruption for JPEG data')
+parser.add_argument('--bit_flip_prob', type=float, default=0.001, help='Probability of flipping each bit (default: 0.001, i.e., 0.1%)')
 args = parser.parse_args()
 
 # 获取数据集配置
 dataset_name, image_field, out_dir = get_dataset_config(args.dataset)
 os.makedirs(out_dir, exist_ok=True)
 
-# 预处理方式与训练/推理一致
-preprocess = transforms.Compose([
-    transforms.RandomResizedCrop((96, 96), scale=(1.0, 1.0), ratio=(1.0, 1.0), antialias=True)
-])
+# 预处理方式与训练/推理一致，使用统一的数据处理工具
+preprocess = create_preprocess_transform(args.image_size)
 
 # Tokenizer 路径（与训练/推理保持一致）
 MODEL_PATH = '/root/autodl-tmp/MLLM/models/jpeg-lm'
 QUALITY = 25
 FILTER_THRESHOLD = 7800  # 过滤阈值（仅当启用过滤时使用）
 
-def convert_img_to_bytes(img: Image.Image, quality: int = QUALITY) -> str:
-    img.save("cache_tables.jpg", format="JPEG", quality=quality, subsampling="4:2:0", streamtype=1, restart_marker_blocks=1)
-    with os.fdopen(os.dup(os.open("cache_tables.jpg", os.O_RDONLY)), 'rb') as _:
-        pass  # just to ensure file is closed after save
-    import io
-    with io.BytesIO() as buf:
-        img.save(buf, format="JPEG", quality=quality, subsampling="4:2:0", streamtype=2, restart_marker_blocks=1)
-        data = buf.getvalue()
-    return ''.join(chr(b + 10240) for b in data)
-
-def tokenize_example(example, tokenizer, image_field):
+def tokenize_example(example, tokenizer, image_field, save_reconstructed_image=False):
     if args.dataset == 'imagenet100':
         # ImageNet100直接从文件路径加载图片
         img = Image.open(example['image_path']).convert("RGB")
@@ -98,12 +94,45 @@ def tokenize_example(example, tokenizer, image_field):
         img = preprocess(example[image_field])
         img = img.convert("RGB")
     
-    jpeg_str = convert_img_to_bytes(img, QUALITY)
-    # 不限制序列长度，直接tokenize
-    toks = tokenizer(jpeg_str, add_special_tokens=False)
+    # 根据命令行参数决定是否启用比特反转
+    bit_flip_prob = args.bit_flip_prob if args.bit_flip else 0.0
+    jpeg_str = convert_img_to_bytes(img, QUALITY, bit_flip_prob=bit_flip_prob)
+    
+    # 只在需要保存图像时进行重构
+    if save_reconstructed_image and bit_flip_prob > 0.0:
+        # 将jpeg_str转换回字节数据
+        byte_list = [ord(c) - 10240 for c in jpeg_str]  # UNICODE_OFFSET = 10240
+        
+        # 读取表格文件头（参考run.py的save_byte_image函数）
+        cache_tables_path = "cache_tables.jpg"
+        if os.path.exists(cache_tables_path):
+            with open(cache_tables_path, 'rb') as f:
+                hexdata = f.read().hex()
+                table_int_list = [int(_e) for _e in bytearray.fromhex(hexdata)]
+                table_int_list = table_int_list[2:-2]  # 移除前2字节(FF D8)和后2字节(FF D9)
+            
+            # 拼接完整的JPEG数据：前2字节 + 表格 + 后续数据
+            complete_byte_list = byte_list[:2] + table_int_list + byte_list[2:]
+            jpeg_bytes = bytes(complete_byte_list)
+            
+            # 尝试将字节数据转换回PIL图像
+            try:
+                with io.BytesIO(jpeg_bytes) as buf:
+                    reconstructed_img = Image.open(buf).convert("RGB")
+                    # 将重构的图像作为返回的图像
+                    img = reconstructed_img
+                    print(f"成功重构比特反转后的图像")
+            except Exception as e:
+                # 如果重构失败，直接返回损坏的字节数据用于强制保存
+                print(f"图像重构失败，将强制保存损坏的JPEG数据: {str(e)[:50]}...")
+                # 返回特殊标记和字节数据
+                return [tokenizer.bos_token_id] + tokenizer(jpeg_str, add_special_tokens=False)["input_ids"], jpeg_bytes, len([tokenizer.bos_token_id] + tokenizer(jpeg_str, add_special_tokens=False)["input_ids"])
+    
+    # 不限制序列长度，直接tokenize，但添加bos_token_id保持与训练/推理一致
+    input_ids = [tokenizer.bos_token_id] + tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
     # 获取实际token长度
-    actual_len = len(toks['input_ids'])
-    return toks["input_ids"], img, actual_len
+    actual_len = len(input_ids)
+    return input_ids, img, actual_len
 
 # 加载数据集
 if args.dataset == 'imagenet100':
@@ -128,6 +157,12 @@ else:
 # 加载 tokenizer
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, use_fast=False)
 
+# 输出比特反转状态信息
+if args.bit_flip:
+    print(f"启用比特反转模式，反转概率: {args.bit_flip_prob:.6f} ({args.bit_flip_prob*100:.4f}%)")
+else:
+    print("未启用比特反转模式")
+
 # 只保留：每个类别各随机保存一张示例图片和对应txt内容
 import random
 save_txt_path = os.path.join(os.path.dirname(out_dir), 'samples.txt')
@@ -148,9 +183,22 @@ for label in range(10):
         continue
     chosen_idx = random.choice(indices)
     ex = examples[chosen_idx]
-    input_ids, img_proc, actual_len = tokenize_example(ex, tokenizer, image_field)
-    save_path = os.path.join(out_dir, f'category_{label}_example.png')
-    img_proc.save(save_path)
+    # 对于保存示例图片，启用图像重构
+    input_ids, img_proc_or_bytes, actual_len = tokenize_example(ex, tokenizer, image_field, save_reconstructed_image=True)
+    
+    # 处理保存逻辑
+    if isinstance(img_proc_or_bytes, bytes):
+        # 如果返回的是字节数据（重构失败的情况），直接写入JPEG文件
+        save_path = os.path.join(out_dir, f'category_{label}_example.jpg')
+        with open(save_path, 'wb') as f:
+            f.write(img_proc_or_bytes)
+        print(f"类别 {label}: 强制保存损坏的JPEG数据到 {save_path}")
+    else:
+        # 如果返回的是PIL图像，保存为JPEG
+        save_path = os.path.join(out_dir, f'category_{label}_example.jpg')
+        img_proc_or_bytes.save(save_path, format='JPEG', quality=25)
+        print(f"类别 {label}: 保存图像到 {save_path}")
+    
     category_img_paths[label] = save_path
     category_saved.add(label)
     # 保存对应txt内容
@@ -159,7 +207,8 @@ for label in range(10):
         img = preprocess(img)
     else:
         img = preprocess(ex[image_field]).convert("RGB")
-    jpeg_str = convert_img_to_bytes(img, QUALITY)
+    bit_flip_prob = args.bit_flip_prob if args.bit_flip else 0.0
+    jpeg_str = convert_img_to_bytes(img, QUALITY, bit_flip_prob=bit_flip_prob)
     jpeg_hex = ''.join(f'{ord(c)-10240:02x}' for c in jpeg_str)
     sample_txt_lines.append(f"Sample {chosen_idx} label={label}\nJPEG hex: {jpeg_hex}\nToken ids: {input_ids}\n\n")
 if len(category_saved) < 10:
@@ -200,7 +249,8 @@ else:
             raise TypeError(f"examples_2000[0] 类型为{type(examples_2000[0])}，不是dict，请检查数据加载逻辑！")
 
 for i, ex in enumerate(examples_2000):
-    input_ids, _, actual_len = tokenize_example(ex, tokenizer, image_field)
+    # 对于统计，不进行图像重构
+    input_ids, _, actual_len = tokenize_example(ex, tokenizer, image_field, save_reconstructed_image=False)
     # 根据命令行参数决定是否过滤
     if not args.filter or actual_len <= FILTER_THRESHOLD:
         lengths_2000.append(actual_len)
