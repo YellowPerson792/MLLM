@@ -38,7 +38,7 @@ class JpegLMEncoderForClassification(PreTrainedModel):
         )
         
         # 分类头组件
-        self.dropout = nn.Dropout(config.classifier_dropout if hasattr(config, 'classifier_dropout') else 0.3)
+        self.dropout = nn.Dropout(config.classifier_dropout if hasattr(config, 'classifier_dropout') else 0.1)
         self.pre_classifier = nn.LayerNorm(config.hidden_size)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
@@ -261,16 +261,13 @@ import torch.nn as nn
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
 class JpegLMSeq2SeqModel(PreTrainedModel, GenerationMixin):
-    def __init__(self, encoder_cfg, decoder_cfg, pooling='last'):
+    def __init__(self, encoder_cfg, decoder_cfg):
         cfg = encoder_cfg
         cfg.decoder_config = decoder_cfg
-        cfg.encoder_pooling_strategy = pooling
         super().__init__(cfg)
-        # 编码器
         encoder_cfg.is_decoder = False
         encoder_cfg.add_cross_attention = False
         self.encoder = AutoModel.from_pretrained(encoder_cfg.name_or_path, config=encoder_cfg)
-        # 解码器
         decoder_cfg.is_decoder = True
         decoder_cfg.add_cross_attention = True
         self.decoder = AutoModelForCausalLM.from_pretrained(decoder_cfg.name_or_path, config=decoder_cfg)
@@ -322,31 +319,19 @@ class JpegLMSeq2SeqModel(PreTrainedModel, GenerationMixin):
     def forward(self, input_ids, attention_mask,
                 decoder_input_ids=None, decoder_attention_mask=None,
                 labels=None, **kwargs):
-        # 编码
         enc_out = self.encoder(input_ids=input_ids,
                                attention_mask=attention_mask,
                                return_dict=True)
         hs = enc_out.last_hidden_state
-        # 投影到 decoder hidden_size（如果需要）
         if self.encoder_to_decoder_proj is not None:
             hs = self.encoder_to_decoder_proj(hs)
-        # 训练时，labels 中含 -100，需要先恢复再移位
         if decoder_input_ids is None and labels is not None:
-            # 确保 labels 是正确的 tensor，避免梯度断开
-            if not torch.is_tensor(labels):
-                labels_tensor = torch.tensor(labels, dtype=torch.long, device=hs.device)
-            else:
-                labels_tensor = labels.to(dtype=torch.long, device=hs.device)
-            
-            # 重要修复：先将 -100 替换为 pad_token_id，再进行 shift
-            # 这样 shift_tokens_right 就能正确处理
+            labels_tensor = torch.as_tensor(labels, dtype=torch.long, device=hs.device)
             labels_for_shift = labels_tensor.clone()
             labels_for_shift[labels_for_shift == -100] = self.config.pad_token_id
-            
-            # 修正导入路径
             from transformers.models.bart.modeling_bart import shift_tokens_right
             decoder_input_ids = shift_tokens_right(
-                labels_for_shift,  # 使用处理过的labels
+                labels_for_shift,
                 pad_token_id=self.config.pad_token_id,
                 decoder_start_token_id=self.config.decoder_start_token_id
             )
@@ -357,28 +342,9 @@ class JpegLMSeq2SeqModel(PreTrainedModel, GenerationMixin):
         loss = None
         if labels is not None:
             logits = dec_out.logits
-            # 确保 labels 是 LongTensor 且与 logits 在同一 device
-            if not torch.is_tensor(labels):
-                labels = torch.tensor(labels, dtype=torch.long, device=logits.device)
-            else:
-                labels = labels.to(dtype=torch.long, device=logits.device)
-            
-            # 防止空 tensor
-            if labels.numel() == 0:
-                loss = logits.sum() * 0.0
-            else:
-                loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
-                loss = loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
-                
-                # 检查损失是否为 NaN 或无穷大，但不要破坏梯度图
-                if torch.isnan(loss) or torch.isinf(loss):
-                    print(f"⚠️ 异常损失值: {loss.item()}")
-                    # 创建一个可微分的零损失，保持计算图
-                    loss = (logits * 0.0).sum()
-                elif loss.item() == 0.0:
-                    print(f"⚠️ 损失为零，可能导致梯度消失")
-                
-                # 不要手动设置requires_grad，这会破坏计算图
+            labels_tensor = torch.as_tensor(labels, dtype=torch.long, device=logits.device)
+            loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
+            loss = loss_fn(logits.view(-1, logits.size(-1)), labels_tensor.view(-1))
         return Seq2SeqLMOutput(loss=loss,
                                logits=dec_out.logits,
                                past_key_values=dec_out.past_key_values,
@@ -402,30 +368,20 @@ def create_jpeglm_encoder(model_name_or_path, pooling_strategy='last', **kwargs)
     """
     print(f"正在加载 JpegLM 配置: {model_name_or_path}")
     config = AutoConfig.from_pretrained(model_name_or_path)
-    
-    # Encoder 模式配置
     config.is_decoder = False
     config.add_cross_attention = False
     config.use_cache = False
-    
-    # Vision Encoder 相关配置
-    config.pooling_strategy = pooling_strategy
     config.name_or_path = model_name_or_path
-    
     print(f"正在加载 JpegLM 模型权重 (13GB)，请耐心等待...")
     model = JpegLMEncoder(config)
-    
     print(f"✓ 已创建 JpegLM Vision Encoder")
-    print(f"  - 池化策略: {pooling_strategy}")
     print(f"  - 隐藏维度: {config.hidden_size}")
-    
     return model
 
 
 def create_vision_encoder_decoder_model(
     encoder_model_name_or_path, 
     decoder_model_name_or_path,
-    encoder_pooling_strategy='last',
     **kwargs
 ):
     """
@@ -442,8 +398,7 @@ def create_vision_encoder_decoder_model(
     """
     # 创建编码器
     encoder = create_jpeglm_encoder(
-        encoder_model_name_or_path, 
-        pooling_strategy=encoder_pooling_strategy
+        encoder_model_name_or_path
     )
     
     print(f"正在从缓存加载解码器: {decoder_model_name_or_path}")
@@ -470,7 +425,6 @@ def create_vision_encoder_decoder_model(
     encoder_config.is_decoder = False
     encoder_config.add_cross_attention = False  
     encoder_config.use_cache = False
-    encoder_config.pooling_strategy = encoder_pooling_strategy
     
     # 创建 VisionEncoderDecoderConfig，使用已有的 decoder_config
     config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(
@@ -534,7 +488,7 @@ def create_vision_encoder_decoder_model(
     model.config.pad_token_id = decoder.config.pad_token_id
     
     print(f"✓ 已创建 VisionEncoderDecoderModel")
-    print(f"  - 编码器: JpegLM ({encoder_pooling_strategy} pooling)")
+    print(f"  - 编码器: JpegLM")
     print(f"  - 解码器: {decoder_model_name_or_path}")
     
     return model
@@ -590,10 +544,16 @@ def create_seq2seq_model(
     
     # 设置特殊token，pad_token_id 统一为 '§' 的 id
     pad_token_str = '§'
+    bos_token_str = '¤'
     from transformers import AutoTokenizer
     dec_tok = AutoTokenizer.from_pretrained(decoder_model_name_or_path)
     pad_token_id = dec_tok.convert_tokens_to_ids(pad_token_str)
-    config.decoder_start_token_id = getattr(decoder_config, 'bos_token_id', None) or getattr(decoder_config, 'eos_token_id', 50256)
+    # 自动添加bos_token
+    if bos_token_str not in dec_tok.get_vocab():
+        dec_tok.add_tokens([bos_token_str])
+    bos_token_id = dec_tok.convert_tokens_to_ids(bos_token_str)
+    config.decoder_start_token_id = bos_token_id
+    config.bos_token_id = bos_token_id
     config.pad_token_id = pad_token_id
     config.eos_token_id = getattr(decoder_config, 'eos_token_id', 50256)
     
@@ -616,7 +576,6 @@ def create_seq2seq_model(
 def create_seq2seq_model_legacy(
     encoder_model_name_or_path, 
     decoder_model_name_or_path,
-    encoder_pooling_strategy='last',
     **kwargs
 ):
     """
@@ -640,18 +599,31 @@ def create_seq2seq_model_legacy(
     decoder_config.name_or_path = decoder_model_name_or_path
     
     print(f"正在创建 Seq2Seq 模型...")
+    # 特殊token处理，统一pad_token_id为'§'的id
+    pad_token_str = '§'
+    bos_token_str = '¤'
+    from transformers import AutoTokenizer
+    dec_tok = AutoTokenizer.from_pretrained(decoder_model_name_or_path)
+    pad_token_id = dec_tok.convert_tokens_to_ids(pad_token_str)
+    # 自动添加bos_token
+    if bos_token_str not in dec_tok.get_vocab():
+        dec_tok.add_tokens([bos_token_str])
+    bos_token_id = dec_tok.convert_tokens_to_ids(bos_token_str)
+    decoder_config.pad_token_id = pad_token_id
+    decoder_config.eos_token_id = getattr(decoder_config, 'eos_token_id', 50256)
+    decoder_config.bos_token_id = bos_token_id
+
     model = JpegLMSeq2SeqModel(
         encoder_config,
-        decoder_config,
-        encoder_pooling_strategy
+        decoder_config
     )
-    
+
     print(f"✓ 已创建 Seq2Seq 模型")
-    print(f"  - 编码器: JpegLM ({encoder_pooling_strategy} pooling)")
+    print(f"  - 编码器: JpegLM")
     print(f"  - 解码器: {decoder_model_name_or_path}")
     print(f"  - 编码器维度: {encoder_config.hidden_size}")
     print(f"  - 解码器维度: {decoder_config.hidden_size}")
-    
+
     return model
 
 

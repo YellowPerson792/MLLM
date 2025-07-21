@@ -34,21 +34,36 @@ def convert_img_to_bytes(img: Image.Image, quality: int):
 
 
 def collate_fn(batch):
-    ids = torch.tensor([item["input_ids"] for item in batch], dtype=torch.long)
-    masks = torch.tensor([item["attention_mask"] for item in batch], dtype=torch.long)
-    labels = torch.tensor([item["labels"] for item in batch], dtype=torch.long)
-    return {"input_ids": ids, "attention_mask": masks, "labels": labels}
+    # 动态padding到batch最大长度
+    input_lens = [sum([1 for t in item["input_ids"] if t != 0 and t is not None]) for item in batch]
+    max_input_len = max(input_lens)
+    input_ids = []
+    attention_mask = []
+    labels = []
+    for item in batch:
+        inp = item["input_ids"][:max_input_len]
+        inp += [0] * (max_input_len - len(inp))
+        input_ids.append(inp)
+        mask = item["attention_mask"][:max_input_len]
+        mask += [0] * (max_input_len - len(mask))
+        attention_mask.append(mask)
+        labels.append(item["labels"])
+    input_ids = torch.tensor(input_ids, dtype=torch.long)
+    attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+    labels = torch.tensor(labels, dtype=torch.long)
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision('high')
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name_or_path", required=True)
     parser.add_argument("--checkpoint_dir", required=True)
-    parser.add_argument("--dataset", choices=['mnist', 'cifar10'], default='mnist', help="Dataset to evaluate on (mnist or cifar10)")
+    parser.add_argument("--dataset", choices=['mnist', 'cifar10', 'imagenet100'], default='mnist', help="Dataset to evaluate on (mnist/cifar10/imagenet100)")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test_subset_size", type=int)
     parser.add_argument("--image_size", type=int, default=256, help="Image side length for preprocessing (e.g. 96 or 256)")
+    parser.add_argument("--imagenet100_dir", type=str, default='/root/autodl-fs/datasets/imagenet100', help="imagenet100根目录")
     parser.add_argument("--use_xformers", action='store_true')
     parser.add_argument("--use_deepspeed", action='store_true')
     parser.add_argument("--use_sdpa", action='store_true', help="Enable PyTorch SDPA attention acceleration")
@@ -81,6 +96,12 @@ if __name__ == "__main__":
             max_seq_len = 3600
         image_key = 'img'
         num_labels = 10
+    elif args.dataset == 'imagenet100':
+        dataset_name = None
+        if args.max_seq_len is None:
+            max_seq_len = 4096
+        image_key = 'image'
+        num_labels = 100
 
     print(f"Evaluating on {args.dataset} dataset with max_seq_len={max_seq_len}, image_size={args.image_size}")
     print(f"Model type: {args.model_type}")
@@ -159,7 +180,35 @@ if __name__ == "__main__":
     ds = load_dataset(dataset_name)
 
     # Handle different dataset structures
-    if args.dataset == 'mnist':
+    if args.dataset == 'imagenet100':
+        import glob
+        from PIL import Image
+        import random
+        class_dirs = sorted([d for d in os.listdir(args.imagenet100_dir) if os.path.isdir(os.path.join(args.imagenet100_dir, d))])
+        class_to_idx = {cls: idx for idx, cls in enumerate(class_dirs)}
+        all_samples = []
+        for cls in class_dirs:
+            img_dir = os.path.join(args.imagenet100_dir, cls)
+            img_files = glob.glob(os.path.join(img_dir, '*.JPEG')) + glob.glob(os.path.join(img_dir, '*.jpg'))
+            for img_path in img_files:
+                all_samples.append({'image_path': img_path, 'label': class_to_idx[cls]})
+        random.seed(args.seed)
+        random.shuffle(all_samples)
+        test_samples = all_samples[-args.test_subset_size:] if args.test_subset_size else all_samples
+        preprocess = create_preprocess_transform(args.image_size)
+        def process_imagenet_sample(ex):
+            img = Image.open(ex['image_path']).convert('RGB')
+            ex_proc = {'image': img, 'label': ex['label']}
+            out = tokenize_example_for_evaluation(ex_proc, tokenizer, max_seq_len, 'image', preprocess, bit_flip_prob=args.bit_flip_prob if args.bit_flip else 0.0)
+            return out
+        from datasets import Dataset
+        test = Dataset.from_list(test_samples).map(
+            process_imagenet_sample,
+            batched=False,
+            num_proc=12,
+            desc="处理imagenet100测试数据"
+        )
+    elif args.dataset == 'mnist':
         ds = ds.cast_column('image', ds['train'].features['image'])
         test = ds['test']
     elif args.dataset == 'cifar10':

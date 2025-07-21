@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # JpegLM Encoder Architecture Training Script (Fixed)
 # 将 JpegLM 从生成式语言模型改造成 encoder 架构进行分类任务
-# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --disable_wandb
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --dataset_mode mnist --disable_wandb
 
 import argparse
 import torch
@@ -10,10 +10,7 @@ import torch.nn as nn
 import sys
 import os
 from transformers import (
-    AutoConfig,
     AutoTokenizer,
-    AutoModel,
-    PreTrainedModel,
     TrainingArguments,
     Trainer,
     set_seed,
@@ -29,14 +26,14 @@ from data_utils import tokenize_example_for_training, get_dataset_config, create
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models'))
 from jpeglm_encoder import create_jpeglm_encoder_model
 
-MAX_SEQ_LEN = 2048
-
 
 def get_dataset_and_field(dataset_mode):
     if dataset_mode == 'mnist':
         return 'ylecun/mnist', 'image'
     elif dataset_mode == 'cifar10':
         return 'uoft-cs/cifar10', 'img'
+    elif dataset_mode == 'imagenet100':
+        return None, None  # 特殊处理，见下方
     else:
         raise ValueError(f"Unsupported dataset_mode: {dataset_mode}")
 
@@ -47,7 +44,7 @@ def create_encoder_model(model_name_or_path, num_labels=10, pooling_strategy='me
         model_name_or_path=model_name_or_path,
         num_labels=num_labels,
         pooling_strategy=pooling_strategy,
-        classifier_dropout=0.3
+        classifier_dropout=0.1
     )
 
 if __name__ == '__main__':
@@ -70,8 +67,10 @@ if __name__ == '__main__':
     parser.add_argument('--bf16', action='store_true', help="使用 BF16")
     parser.add_argument('--wandb_run_name', type=str, default='jpeglm-encoder-mnist-v1', help="W&B 运行名称")
     parser.add_argument('--disable_wandb', action='store_true', help="禁用 W&B")
-    parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist','cifar10'], help="数据集模式")
-    parser.add_argument('--max_seq_len', type=int, default=MAX_SEQ_LEN, help="最大序列长度")
+    parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist','cifar10','imagenet100'], help="数据集模式")
+    parser.add_argument('--imagenet100_dir', type=str, default='/root/autodl-fs/datasets/imagenet100', help="imagenet100根目录")
+    parser.add_argument('--image_size', type=int, default=256, help="输入图像尺寸")
+    parser.add_argument('--max_seq_len', type=int, default=2048, help="最大序列长度")
     parser.add_argument('--pooling_strategy', type=str, default='mean', choices=['mean','max','cls','last'], help="池化策略")
     args = parser.parse_args()
 
@@ -79,9 +78,13 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
+    if args.dataset_mode == 'imagenet100':
+        num_labels = 100
+    else:
+        num_labels = 10
     model = create_encoder_model(
         args.model_name_or_path,
-        num_labels=10,
+        num_labels=num_labels,
         pooling_strategy=args.pooling_strategy
     )
 
@@ -107,35 +110,75 @@ if __name__ == '__main__':
             param.requires_grad = True
 
     # 加载数据集
-    dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
-    ds = load_dataset(dataset_name)
-    if args.dataset_mode == 'mnist':
-        ds = ds.cast_column('image', ds['train'].features['image'])
-    else:
-        ds = ds.cast_column('img', ds['train'].features['img'])
-    train_ds = ds['train']; test_ds = ds['test']
-    if args.train_subset_size:
-        train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
-    if args.test_subset_size:
-        test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
+    if args.dataset_mode == 'imagenet100':
+        import glob
+        from PIL import Image
+        import random
+        # 获取所有类别文件夹
+        class_dirs = sorted([d for d in os.listdir(args.imagenet100_dir) if os.path.isdir(os.path.join(args.imagenet100_dir, d))])
+        class_to_idx = {cls: idx for idx, cls in enumerate(class_dirs)}
+        # 收集所有图片路径和标签
+        all_samples = []
+        for cls in class_dirs:
+            img_dir = os.path.join(args.imagenet100_dir, cls)
+            img_files = glob.glob(os.path.join(img_dir, '*.JPEG')) + glob.glob(os.path.join(img_dir, '*.jpg'))
+            for img_path in img_files:
+                all_samples.append({'image_path': img_path, 'label': class_to_idx[cls]})
+        # 划分训练/测试
+        random.seed(args.seed)
+        random.shuffle(all_samples)
+        train_samples = all_samples[:args.train_subset_size] if args.train_subset_size else all_samples
+        test_samples = all_samples[-args.test_subset_size:] if args.test_subset_size else all_samples
 
-    # 数据预处理：与 test.py 保持一致
-    preprocess = create_preprocess_transform(96)
-    
-    train_ds = train_ds.map(
-        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
-        batched=False, 
-        remove_columns=train_ds.column_names,
-        num_proc=12,
-        desc="处理训练数据"
-    )
-    test_ds = test_ds.map(
-        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
-        batched=False, 
-        remove_columns=test_ds.column_names,
-        num_proc=12,
-        desc="处理测试数据"
-    )
+        preprocess = create_preprocess_transform(args.image_size)
+        def process_imagenet_sample(ex):
+            img = Image.open(ex['image_path']).convert('RGB')
+            ex_proc = {'image': img, 'label': ex['label']}
+            out = tokenize_example_for_training(ex_proc, tokenizer, 'image', args.max_seq_len, preprocess)
+            return out
+
+        # 转为datasets格式
+        from datasets import Dataset
+        train_ds = Dataset.from_list(train_samples).map(
+            process_imagenet_sample,
+            batched=False,
+            num_proc=12,
+            desc="处理imagenet100训练数据"
+        )
+        test_ds = Dataset.from_list(test_samples).map(
+            process_imagenet_sample,
+            batched=False,
+            num_proc=12,
+            desc="处理imagenet100测试数据"
+        )
+    else:
+        dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
+        ds = load_dataset(dataset_name)
+        if args.dataset_mode == 'mnist':
+            ds = ds.cast_column('image', ds['train'].features['image'])
+        else:
+            ds = ds.cast_column('img', ds['train'].features['img'])
+        train_ds = ds['train']; test_ds = ds['test']
+        if args.train_subset_size:
+            train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
+        if args.test_subset_size:
+            test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
+
+        preprocess = create_preprocess_transform(args.image_size)
+        train_ds = train_ds.map(
+            lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
+            batched=False, 
+            remove_columns=train_ds.column_names,
+            num_proc=12,
+            desc="处理训练数据"
+        )
+        test_ds = test_ds.map(
+            lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
+            batched=False, 
+            remove_columns=test_ds.column_names,
+            num_proc=12,
+            desc="处理测试数据"
+        )
     
     # ===== 样本token预览 =====
     preview_num = 1
@@ -215,6 +258,31 @@ if __name__ == '__main__':
                 # 验证时保持原损失
                 return (loss, outputs) if return_outputs else loss
 
+    # 动态padding到batch最大长度
+    def collate_fn(batch):
+        input_lens = [sum([1 for t in b['input_ids'] if t != tokenizer.pad_token_id and t is not None]) for b in batch]
+        max_input_len = max(input_lens)
+        input_ids = []
+        attention_mask = []
+        labels = []
+        for b in batch:
+            inp = b['input_ids'][:max_input_len]
+            inp += [tokenizer.pad_token_id] * (max_input_len - len(inp))
+            input_ids.append(inp)
+            mask = b['attention_mask'][:max_input_len] if 'attention_mask' in b else [1]*len(inp)
+            mask += [0] * (max_input_len - len(mask))
+            attention_mask.append(mask)
+            lab = b['labels']
+            labels.append(lab)
+        input_ids = torch.tensor(input_ids)
+        attention_mask = torch.tensor(attention_mask)
+        labels_tensor = torch.tensor(labels)
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels_tensor
+        }
+
     trainer = GradientAdjustedTrainer(
         model=model,
         args=training_args,
@@ -222,7 +290,8 @@ if __name__ == '__main__':
         eval_dataset=test_ds,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
-        optimizers=(create_optimizer(), None)
+        optimizers=(create_optimizer(), None),
+        data_collator=collate_fn
     )
 
     # 开始训练

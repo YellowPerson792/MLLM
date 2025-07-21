@@ -6,14 +6,14 @@ Flickr8K Image Captioning Training Script — 修正版 A
 - 单独使用 GPT‑2 的 tokenizer 处理文本 caption
 - 手动恢复 -100 为 pad_token_id，再右移
 """
-# python /root/autodl-tmp/MLLM/image_caption_train.py --encoder_model /root/autodl-fs/models/jpeg-lm --decoder_model gpt2 --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning --image_size 96 --max_enc_len 2048 --max_dec_len 16 --batch_size 1 --gradient_accumulation_steps 2 --epochs 3 --learning_rate 2e-4 --lora_r 8 --lora_alpha 32 --fp16 --seed 42 --disable_wandb
+# python /root/autodl-tmp/MLLM/image_caption_train.py --encoder_model /root/autodl-fs/models/jpeg-lm --decoder_model gpt2 --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning --image_size 96 --max_enc_len 2048 --max_dec_len 16 --batch_size 1 --gradient_accumulation_steps 1 --epochs 3 --learning_rate 2e-4 --lora_r 8 --lora_alpha 32 --fp16 --seed 42 --disable_wandb
 
 import argparse, os, sys, torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, TrainingArguments, Seq2SeqTrainer, Seq2SeqTrainingArguments, set_seed
 from peft import get_peft_model, LoraConfig, TaskType
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jpeg-lm/models'))
-from jpeglm_encoder import create_seq2seq_model
+from jpeglm_encoder import create_seq2seq_model, create_seq2seq_model_legacy
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
 from data_utils import convert_img_to_bytes, create_preprocess_transform
 
@@ -113,9 +113,7 @@ def main():
     dec_tok.pad_token_id = pad_token_id
 
     # 模型
-    model = create_seq2seq_model(args.encoder_model,
-                                 args.decoder_model,
-                                 encoder_pooling_strategy='mean')
+    model = create_seq2seq_model_legacy(args.encoder_model, args.decoder_model)
     # 开启梯度检查点
     if hasattr(model.encoder, 'gradient_checkpointing_enable'):
         model.encoder.gradient_checkpointing_enable()
@@ -143,6 +141,14 @@ def main():
     )
     model = get_peft_model(model, peft_cfg).to(device)
     
+    # LoRA后手动解冻需要训练的层
+    if hasattr(model, 'encoder_to_decoder_proj') and model.encoder_to_decoder_proj is not None:
+        for param in model.encoder_to_decoder_proj.parameters():
+            param.requires_grad = True
+        print("✓ 已解冻 encoder_to_decoder_proj 层，参与训练")
+    for name, param in model.decoder.named_parameters():
+        param.requires_grad = True
+    print("✓ 已解冻 GPT-2 全部参数，支持全量微调")
     # 打印可训练参数信息
     model.print_trainable_parameters()
 
@@ -161,7 +167,6 @@ def main():
         print(f"  encoder token解码: {enc_tok.decode([t for t in sample['input_ids'] if t != enc_tok.pad_token_id], skip_special_tokens=False)}")
         print(f"  decode token: {sample['labels']}")
         print(f"  decode token解码: {dec_tok.decode([t if t!=-100 else dec_tok.pad_token_id for t in sample['labels']], skip_special_tokens=False)}")
-        eos_id = dec_tok.eos_token_id
         print("------------------------")
 
     # Tokenize
