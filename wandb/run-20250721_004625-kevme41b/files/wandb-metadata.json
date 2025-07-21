@@ -1,0 +1,71 @@
+{
+  "os": "Linux-5.15.0-78-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.12.3",
+  "startedAt": "2025-07-20T16:46:25.405373Z",
+  "args": [
+    "--encoder_model",
+    "/root/autodl-tmp/MLLM/models/jpeg-lm",
+    "--decoder_model",
+    "gpt2",
+    "--output_dir",
+    "/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning",
+    "--image_size",
+    "96",
+    "--max_enc_len",
+    "2048",
+    "--max_dec_len",
+    "64",
+    "--batch_size",
+    "1",
+    "--gradient_accumulation_steps",
+    "1",
+    "--epochs",
+    "3",
+    "--learning_rate",
+    "2e-4",
+    "--lora_r",
+    "8",
+    "--lora_alpha",
+    "32",
+    "--fp16",
+    "--seed",
+    "42"
+  ],
+  "program": "/root/autodl-tmp/MLLM/image_caption_train.py",
+  "codePath": "image_caption_train.py",
+  "git": {
+    "remote": "https://github.com/YellowPerson792/MLLM.git",
+    "commit": "f0ac9906369a44955992a36567dc8119004dbdf7"
+  },
+  "email": "yellow_person@outlook.com",
+  "root": "/root/autodl-tmp/MLLM",
+  "host": "autodl-container-94144787f5-2fa73ce0",
+  "executable": "/root/miniconda3/bin/python",
+  "codePathLocal": "image_caption_train.py",
+  "cpu_count": 64,
+  "cpu_count_logical": 128,
+  "gpu": "NVIDIA vGPU-32GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "32212254720",
+      "used": "31067095040"
+    }
+  },
+  "memory": {
+    "total": "1081808056320"
+  },
+  "cpu": {
+    "count": 64,
+    "countLogical": 128
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA vGPU-32GB",
+      "memoryTotal": "34351349760",
+      "cudaCores": 10240,
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.4"
+}
