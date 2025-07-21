@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # JpegLM Encoder Architecture Training Script (Fixed)
 # 将 JpegLM 从生成式语言模型改造成 encoder 架构进行分类任务
-# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --disable_wandb
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --disable_wandb
 
 import argparse
 import torch
@@ -136,6 +136,17 @@ if __name__ == '__main__':
         num_proc=12,
         desc="处理测试数据"
     )
+    
+    # ===== 样本token预览 =====
+    preview_num = 1
+    print("\n===== 样本token预览 =====")
+    for idx in range(preview_num):
+        sample = train_ds[idx]
+        print(f"样本 {idx}:")
+        print(f"  input_ids: {sample['input_ids']}")
+        print(f"  input_ids解码: {tokenizer.decode([t for t in sample['input_ids'] if t != tokenizer.pad_token_id], skip_special_tokens=False)}")
+        print(f"  labels: {sample['labels']}")
+        print("------------------------")
 
     # 自定义优化器
     def create_optimizer():

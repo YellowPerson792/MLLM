@@ -6,15 +6,15 @@ Flickr8K Image Captioning Training Script — 修正版 A
 - 单独使用 GPT‑2 的 tokenizer 处理文本 caption
 - 手动恢复 -100 为 pad_token_id，再右移
 """
-# python /root/autodl-tmp/MLLM/image_caption_train.py     --encoder_model /root/autodl-tmp/MLLM/models/jpeg-lm     --decoder_model gpt2     --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning     --image_size 96     --max_enc_len 2048     --max_dec_len 64     --batch_size 1     --gradient_accumulation_steps 1     --epochs 3     --learning_rate 2e-4     --lora_r 8     --lora_alpha 32     --fp16     --seed 42     --disable_wandb
+# python /root/autodl-tmp/MLLM/image_caption_train.py --encoder_model /root/autodl-fs/models/jpeg-lm --decoder_model gpt2 --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning --image_size 96 --max_enc_len 2048 --max_dec_len 16 --batch_size 1 --gradient_accumulation_steps 2 --epochs 3 --learning_rate 2e-4 --lora_r 8 --lora_alpha 32 --fp16 --seed 42 --disable_wandb
 
 import argparse, os, sys, torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, TrainingArguments, Seq2SeqTrainer, Seq2SeqTrainingArguments, set_seed
 from peft import get_peft_model, LoraConfig, TaskType
-sys.path.append('jpeg-lm/models')
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'jpeg-lm/models'))
 from jpeglm_encoder import create_seq2seq_model
-sys.path.append('utils')
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
 from data_utils import convert_img_to_bytes, create_preprocess_transform
 
 def parse_args():
@@ -47,10 +47,6 @@ def preprocess_dataset(ex, enc_tok, dec_tok, prep, max_enc, max_dec):
                       max_length=max_enc-1,
                       truncation=True)["input_ids"]
     
-    # 确保token ID在有效范围内
-    enc_vocab_size = enc_tok.vocab_size
-    enc_ids = [min(token_id, enc_vocab_size-1) for token_id in enc_ids]
-    
     enc_ids = [enc_tok.bos_token_id] + enc_ids[:max_enc-1]
     if len(enc_ids) < max_enc:
         enc_ids += [enc_tok.pad_token_id] * (max_enc - len(enc_ids))
@@ -74,15 +70,19 @@ def preprocess_dataset(ex, enc_tok, dec_tok, prep, max_enc, max_dec):
     else:
         cap = "A photo."  # 默认描述
     
+    # 先生成不带 pad 的 token，截断到 max_dec-1
     dec = dec_tok(cap,
-                  max_length=max_dec,
-                  padding='max_length',
+                  add_special_tokens=False,
+                  max_length=max_dec-1,
                   truncation=True,
                   return_tensors=None)
-    
+    labels = dec['input_ids'][:max_dec-1]
+    labels.append(dec_tok.eos_token_id)
+    # pad 到 max_dec 长度
+    if len(labels) < max_dec:
+        labels += [dec_tok.pad_token_id] * (max_dec - len(labels))
     # labels 用 -100，训练时才会被 ignore
-    labels = [tok if tok!=dec_tok.pad_token_id else -100 
-              for tok in dec['input_ids']]
+    labels = [tok if tok != dec_tok.pad_token_id else -100 for tok in labels]
 
     return {"input_ids": enc_ids,
             "attention_mask": enc_mask,
@@ -105,17 +105,12 @@ def main():
     dec_tok = AutoTokenizer.from_pretrained(args.decoder_model, use_fast=False)
     
     # 强制正确设置 pad_token
-    if dec_tok.pad_token is None:
-        dec_tok.add_special_tokens({"pad_token": "[PAD]"})
-        dec_tok.pad_token = "[PAD]"
-        
-    # 对于 GPT-2，通常使用 eos_token 作为 pad_token
-    if "gpt2" in args.decoder_model.lower():
-        dec_tok.pad_token = dec_tok.eos_token
-    
-    # 验证 pad_token_id
-    if dec_tok.pad_token_id is None:
-        dec_tok.pad_token_id = dec_tok.eos_token_id
+    # 强制 pad_token 和 eos_token 区分开来
+    # 1. 设置 pad_token 为 '§'，并获取其 id
+    pad_token_str = '§'
+    pad_token_id = dec_tok.convert_tokens_to_ids(pad_token_str)
+    dec_tok.pad_token = pad_token_str
+    dec_tok.pad_token_id = pad_token_id
 
     # 模型
     model = create_seq2seq_model(args.encoder_model,
@@ -154,6 +149,21 @@ def main():
     # 数据
     ds = load_dataset('jxie/flickr8k',split='train').train_test_split(0.1,seed=args.seed)
     prep = create_preprocess_transform(args.image_size)
+
+    # 预览前几条样本的token
+    print("\n===== 样本token预览 =====")
+    preview_num = 1
+    for idx in range(preview_num):
+        ex = ds['train'][idx]
+        sample = preprocess_dataset(ex, enc_tok, dec_tok, prep, args.max_enc_len, args.max_dec_len)
+        print(f"样本 {idx}:")
+        print(f"  encoder token: {sample['input_ids']}")
+        print(f"  encoder token解码: {enc_tok.decode([t for t in sample['input_ids'] if t != enc_tok.pad_token_id], skip_special_tokens=False)}")
+        print(f"  decode token: {sample['labels']}")
+        print(f"  decode token解码: {dec_tok.decode([t if t!=-100 else dec_tok.pad_token_id for t in sample['labels']], skip_special_tokens=False)}")
+        eos_id = dec_tok.eos_token_id
+        print("------------------------")
+
     # Tokenize
     train = ds['train'].map(lambda ex: preprocess_dataset(ex, enc_tok, dec_tok, prep,
                                                           args.max_enc_len, args.max_dec_len),
@@ -164,12 +174,32 @@ def main():
 
     # collate_fn
     def collate_fn(batch):
-        enc_ids = torch.tensor([b['input_ids'] for b in batch])
-        enc_mask= torch.tensor([b['attention_mask'] for b in batch])
-        labs    = [b['labels'] for b in batch]
-        
+        # 动态padding到batch最大长度
+        enc_lens = [sum([1 for t in b['input_ids'] if t != 0 and t != None]) for b in batch]
+        dec_lens = [sum([1 for t in b['labels'] if t != -100 and t != None]) for b in batch]
+        max_enc_len = max(enc_lens)
+        max_dec_len = max(dec_lens)
+
+        enc_ids = []
+        enc_mask = []
+        labs = []
+        for b in batch:
+            # encoder部分
+            enc = b['input_ids'][:max_enc_len]
+            enc += [0] * (max_enc_len - len(enc))
+            enc_ids.append(enc)
+            mask = b['attention_mask'][:max_enc_len]
+            mask += [0] * (max_enc_len - len(mask))
+            enc_mask.append(mask)
+            # decoder部分
+            lab = b['labels'][:max_dec_len]
+            lab += [-100] * (max_dec_len - len(lab))
+            labs.append(lab)
+
+        enc_ids = torch.tensor(enc_ids)
+        enc_mask = torch.tensor(enc_mask)
         labels_tensor = torch.tensor(labs)
-        
+
         return {
             "input_ids":      enc_ids,
             "attention_mask": enc_mask,
@@ -186,7 +216,8 @@ def main():
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
-        eval_strategy='steps',
+        save_total_limit=3,
+        eval_strategy='epoch',
         eval_steps=args.save_steps,
         fp16=args.fp16,
         seed=args.seed,

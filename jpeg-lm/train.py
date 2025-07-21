@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example: python /root/autodl-tmp/MLLM/jpeg-lm/classification_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb
+# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb
 
 import argparse
 import torch
@@ -99,10 +99,10 @@ if __name__ == '__main__':
     print("开始数据预处理...")
     import time
     start_time = time.time()
-    
+
     # 创建预处理变换
     preprocess = create_preprocess_transform(96)  # 96x96 图像大小
-    
+
     train_ds = train_ds.map(
         lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, max_seq_len, preprocess), 
         batched=False, 
@@ -117,7 +117,10 @@ if __name__ == '__main__':
         num_proc=12,  # 使用4个进程并行处理
         desc="处理测试数据"
     )
-    
+
+    preprocess_time = time.time() - start_time
+    print(f"数据预处理完成，耗时: {preprocess_time:.2f}秒")
+
     # ===== 样本token预览 =====
     preview_num = 1
     print("\n===== 样本token预览 =====")
@@ -128,9 +131,7 @@ if __name__ == '__main__':
         print(f"  input_ids解码: {tokenizer.decode([t for t in sample['input_ids'] if t != tokenizer.pad_token_id], skip_special_tokens=False)}")
         print(f"  labels: {sample['labels']}")
         print("------------------------")
-    
-    preprocess_time = time.time() - start_time
-    print(f"数据预处理完成，耗时: {preprocess_time:.2f}秒")
+
     print("开始模型训练...")
 
     training_args = TrainingArguments(

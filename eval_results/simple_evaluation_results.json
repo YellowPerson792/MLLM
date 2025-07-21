@@ -1,0 +1,8 @@
+{
+  "bleu_score": 0.012173916000851612,
+  "exact_match_rate": 0.0,
+  "num_samples": 100,
+  "checkpoint": "/root/autodl-fs/trained_models/jpeglm/jpeglm-gpt2-v1",
+  "dataset": "jxie/flickr8k",
+  "split": "test"
+}

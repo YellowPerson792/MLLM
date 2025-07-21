@@ -1,10 +1,10 @@
 # Example commands:
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --image_size 96
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset mnist --image_size 96
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset imagenet100 --image_size 256
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --filter --image_size 96
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset cifar10 --bit_flip --bit_flip_prob 0.001 --image_size 96
-# python /root/autodl-tmp/MLLM/utils/check_prepocess.py --dataset mnist --bit_flip --bit_flip_prob 0.005 --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset mnist --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset imagenet100 --image_size 256
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --filter --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --bit_flip --bit_flip_prob 0.001 --image_size 96
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset mnist --bit_flip --bit_flip_prob 0.005 --image_size 96
 
 import os
 import argparse
@@ -86,7 +86,7 @@ os.makedirs(out_dir, exist_ok=True)
 preprocess = create_preprocess_transform(args.image_size)
 
 # Tokenizer 路径（与训练/推理保持一致）
-MODEL_PATH = '/root/autodl-tmp/MLLM/models/jpeg-lm'
+MODEL_PATH = '/root/autodl-fs/models/jpeg-lm'
 QUALITY = 25
 FILTER_THRESHOLD = 7800  # 过滤阈值（仅当启用过滤时使用）
 

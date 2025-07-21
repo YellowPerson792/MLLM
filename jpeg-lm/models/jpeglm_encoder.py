@@ -543,7 +543,7 @@ def create_vision_encoder_decoder_model(
 def create_seq2seq_model(
     encoder_model_name_or_path, 
     decoder_model_name_or_path,
-    encoder_pooling_strategy='last',
+    # 不再需要 encoder_pooling_strategy
     **kwargs
 ):
     """
@@ -563,8 +563,7 @@ def create_seq2seq_model(
     # 创建编码器
     print(f"正在加载 JpegLM 编码器: {encoder_model_name_or_path}")
     encoder = create_jpeglm_encoder(
-        encoder_model_name_or_path, 
-        pooling_strategy=encoder_pooling_strategy
+        encoder_model_name_or_path
     )
     
     # 加载解码器
@@ -583,62 +582,30 @@ def create_seq2seq_model(
     encoder_config.is_decoder = False
     encoder_config.add_cross_attention = False
     encoder_config.use_cache = False
-    encoder_config.pooling_strategy = encoder_pooling_strategy
+    # 不设置 encoder_config.pooling_strategy
     
     config = EncoderDecoderConfig.from_encoder_decoder_configs(
         encoder_config, decoder_config
     )
     
-    # 设置特殊token
+    # 设置特殊token，pad_token_id 统一为 '§' 的 id
+    pad_token_str = '§'
+    from transformers import AutoTokenizer
+    dec_tok = AutoTokenizer.from_pretrained(decoder_model_name_or_path)
+    pad_token_id = dec_tok.convert_tokens_to_ids(pad_token_str)
     config.decoder_start_token_id = getattr(decoder_config, 'bos_token_id', None) or getattr(decoder_config, 'eos_token_id', 50256)
-    config.pad_token_id = getattr(decoder_config, 'pad_token_id', None) or getattr(decoder_config, 'eos_token_id', 50256)
+    config.pad_token_id = pad_token_id
     config.eos_token_id = getattr(decoder_config, 'eos_token_id', 50256)
     
-    # 创建自定义的 EncoderDecoderModel 子类，支持 input_ids
-    class JpegLMEncoderDecoderModel(EncoderDecoderModel):
-        def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            decoder_input_ids=None,
-            decoder_attention_mask=None,
-            encoder_outputs=None,
-            past_key_values=None,
-            inputs_embeds=None,
-            decoder_inputs_embeds=None,
-            labels=None,
-            use_cache=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
-            **kwargs,
-        ):
-            return super().forward(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
-                decoder_attention_mask=decoder_attention_mask,
-                encoder_outputs=encoder_outputs,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                decoder_inputs_embeds=decoder_inputs_embeds,
-                labels=labels,
-                use_cache=use_cache,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-                **kwargs,
-            )
-    
-    # 创建模型
-    model = JpegLMEncoderDecoderModel(
+    # 直接使用 EncoderDecoderModel
+    model = EncoderDecoderModel(
         encoder=encoder,
         decoder=decoder,
         config=config
     )
     
     print(f"✓ 已创建 EncoderDecoderModel")
-    print(f"  - 编码器: JpegLM ({encoder_pooling_strategy} pooling)")
+    print(f"  - 编码器: JpegLM")
     print(f"  - 解码器: {decoder_model_name_or_path}")
     print(f"  - 编码器维度: {encoder_config.hidden_size}")
     print(f"  - 解码器维度: {decoder_config.hidden_size}")
