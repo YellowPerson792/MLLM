@@ -29,23 +29,9 @@ def convert_img_to_bytes(img: Image.Image, quality: int):
 
 
 def collate_fn(batch):
-    # 动态padding到batch最大长度
-    input_lens = [sum([1 for t in item["input_ids"] if t != 0 and t is not None]) for item in batch]
-    max_input_len = max(input_lens)
-    input_ids = []
-    attention_mask = []
-    labels = []
-    for item in batch:
-        inp = item["input_ids"][:max_input_len]
-        inp += [0] * (max_input_len - len(inp))
-        input_ids.append(inp)
-        mask = item["attention_mask"][:max_input_len]
-        mask += [0] * (max_input_len - len(mask))
-        attention_mask.append(mask)
-        labels.append(item["labels"])
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-    attention_mask = torch.tensor(attention_mask, dtype=torch.long)
-    labels = torch.tensor(labels, dtype=torch.long)
+    input_ids = torch.tensor([item["input_ids"] for item in batch], dtype=torch.long)
+    attention_mask = torch.tensor([item["attention_mask"] for item in batch], dtype=torch.long)
+    labels = torch.tensor([item["labels"] for item in batch], dtype=torch.long)
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 if __name__ == "__main__":

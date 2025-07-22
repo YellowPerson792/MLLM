@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example for MNIST: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
-# Example for CIFAR-10: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path //root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
-# Example with bit flip: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --bit_flip --bit_flip_prob 0.001 --max_seq_len 2048
-# Example with JpegLM Encoder: python /root/autodl-tmp/MLLM/evaluate_jpeglm.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --model_type jpeglm_encoder --pooling_strategy mean --max_seq_len 1024
+# Example for MNIST: python /root/autodl-tmp/MLLM/classification_jpeglm_evaluate.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
+# Example for CIFAR-10: python /root/autodl-tmp/MLLM/classification_jpeglm_evaluate.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
+# Example with bit flip: python /root/autodl-tmp/MLLM/classification_jpeglm_evaluate.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --bit_flip --bit_flip_prob 0.001 --max_seq_len 2048
+# Example with JpegLM Encoder: python /root/autodl-tmp/MLLM/classification_jpeglm_evaluate.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --model_type jpeglm_encoder --pooling_strategy mean --max_seq_len 1024
 
 import argparse
 import io
@@ -34,23 +34,9 @@ def convert_img_to_bytes(img: Image.Image, quality: int):
 
 
 def collate_fn(batch):
-    # 动态padding到batch最大长度
-    input_lens = [sum([1 for t in item["input_ids"] if t != 0 and t is not None]) for item in batch]
-    max_input_len = max(input_lens)
-    input_ids = []
-    attention_mask = []
-    labels = []
-    for item in batch:
-        inp = item["input_ids"][:max_input_len]
-        inp += [0] * (max_input_len - len(inp))
-        input_ids.append(inp)
-        mask = item["attention_mask"][:max_input_len]
-        mask += [0] * (max_input_len - len(mask))
-        attention_mask.append(mask)
-        labels.append(item["labels"])
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-    attention_mask = torch.tensor(attention_mask, dtype=torch.long)
-    labels = torch.tensor(labels, dtype=torch.long)
+    input_ids = torch.tensor([item["input_ids"] for item in batch], dtype=torch.long)
+    attention_mask = torch.tensor([item["attention_mask"] for item in batch], dtype=torch.long)
+    labels = torch.tensor([item["labels"] for item in batch], dtype=torch.long)
     return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 if __name__ == "__main__":
@@ -122,33 +108,26 @@ if __name__ == "__main__":
     if args.model_type == 'jpeglm_encoder':
         print("=== 加载 JpegLM Encoder 模型 ===")
         try:
-            # 尝试直接加载已训练的 JpegLM Encoder 模型
-            model = load_jpeglm_encoder_model(args.checkpoint_dir).to(device).eval()
-            print(f"✓ 成功从 {args.checkpoint_dir} 加载 JpegLM Encoder 模型")
-        except Exception as e:
-            print(f"⚠️ 直接加载失败，尝试从 checkpoint 和 PEFT 加载: {e}")
-            try:
-                # 如果直接加载失败，尝试创建基础模型然后加载 PEFT
-                base_model = create_jpeglm_encoder_model(
-                    model_name_or_path=args.model_name_or_path,
-                    num_labels=num_labels,
-                    pooling_strategy=args.pooling_strategy
-                )
-                model = PeftModel.from_pretrained(base_model, args.checkpoint_dir).to(device).eval()
-                print(f"✓ 成功加载 JpegLM Encoder + PEFT 模型")
-            except Exception as e2:
-                print(f"❌ PEFT 加载也失败: {e2}")
-                raise e2
+            base_model = create_jpeglm_encoder_model(
+                model_name_or_path=args.model_name_or_path,
+                num_labels=num_labels,
+                pooling_strategy=args.pooling_strategy
+            )
+            model = PeftModel.from_pretrained(base_model, args.checkpoint_dir).to(device).eval()
+            print(f"✓ 成功加载 JpegLM Encoder + PEFT 模型")
+        except Exception as e2:
+            print(f"❌ PEFT 加载失败: {e2}")
+            raise e2
     else:
         print("=== 加载标准 PEFT 模型 ===")
-        config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=num_labels, use_cache=False)
-        base_kwargs = dict()
-        if args.use_sdpa:
-            base_kwargs['attn_implementation'] = 'sdpa'
-        base = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name_or_path, config=config, **base_kwargs)
-        model = PeftModel.from_pretrained(base, args.checkpoint_dir).to(device).eval()
-        print(f"✓ 成功加载标准 PEFT 模型")
+        # 使用自定义模型构建方式，与 classification_encoder_train 保持一致
+        base_model = create_jpeglm_encoder_model(
+            model_name_or_path=args.model_name_or_path,
+            num_labels=num_labels,
+            pooling_strategy=args.pooling_strategy if hasattr(args, 'pooling_strategy') else 'last'
+        )
+        model = PeftModel.from_pretrained(base_model, args.checkpoint_dir).to(device).eval()
+        print(f"✓ 成功加载标准 PEFT 模型（自定义头结构）")
     
     # 应用优化设置
     if args.use_xformers:
@@ -176,8 +155,9 @@ if __name__ == "__main__":
     # 设置动态preprocess
     preprocess = create_preprocess_transform(args.image_size)
 
-    # Load dataset
-    ds = load_dataset(dataset_name)
+    # Load dataset（只在 dataset_name 不为 None 时加载）
+    if dataset_name is not None:
+        ds = load_dataset(dataset_name)
 
     # Handle different dataset structures
     if args.dataset == 'imagenet100':
@@ -214,13 +194,20 @@ if __name__ == "__main__":
     elif args.dataset == 'cifar10':
         test = ds['test']
 
-    if args.test_subset_size:
+    if args.test_subset_size and args.dataset != 'imagenet100':
         test = test.select(range(min(args.test_subset_size, len(test))))
 
-    # Apply tokenization with dataset-specific parameters
-    bit_flip_prob = args.bit_flip_prob if args.bit_flip else 0.0
-    test = test.map(lambda ex: tokenize_example_for_evaluation(ex, tokenizer, max_seq_len, image_key, preprocess, bit_flip_prob=bit_flip_prob), 
-                   batched=False, remove_columns=test.column_names, num_proc=4)
+    # Apply tokenization with dataset-specific parameters (only for non-imagenet100)
+    if args.dataset != 'imagenet100':
+        bit_flip_prob = args.bit_flip_prob if args.bit_flip else 0.0
+        # 只删除非 image_key 字段，确保图片字段保留
+        remove_cols = [c for c in test.column_names if c != image_key]
+        test = test.map(
+            lambda ex: tokenize_example_for_evaluation(ex, tokenizer, max_seq_len, image_key, preprocess, bit_flip_prob=bit_flip_prob),
+            batched=False,
+            remove_columns=remove_cols,
+            num_proc=12
+        )
     loader = torch.utils.data.DataLoader(test, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4, pin_memory=True)
     total = len(test)
     correct = processed = 0

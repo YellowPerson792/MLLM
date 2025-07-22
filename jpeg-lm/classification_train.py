@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example: python /root/autodl-tmp/MLLM/jpeg-lm/classification_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb
+# Example: python /root/autodl-tmp/MLLM/jpeg-lm/classification_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb --probe_layers "['classifier','pre_classifier']"
 
 import argparse
 import torch
@@ -33,6 +33,16 @@ def get_dataset_and_field(dataset_mode):
     else:
         raise ValueError(f"Unsupported dataset_mode: {dataset_mode}")
 
+# ===== 冻结和解冻指定层 =====
+def freeze_and_unfreeze(model, probe_layers=None):
+    for param in model.parameters():
+        param.requires_grad = False
+    probe_layers = probe_layers or ['classifier', 'pre_classifier']
+    for name, param in model.named_parameters():
+        for probe in probe_layers:
+            if probe in name:
+                param.requires_grad = True
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name_or_path', required=True)
@@ -54,6 +64,7 @@ if __name__ == '__main__':
     parser.add_argument('--disable_wandb', action='store_true')
     parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist', 'cifar10'])
     parser.add_argument('--max_seq_len', type=int, default=MAX_SEQ_LEN, help='Maximum token sequence length')
+    parser.add_argument('--probe_layers', type=str, default=None, help="自定义解冻层名列表，如 ['classifier','pre_classifier'] 或 classifier,pre_classifier")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -69,17 +80,40 @@ if __name__ == '__main__':
     # model.config.pad_token_id = tokenizer.pad_token_id      # 适用于Qwen
 
     # 手动指定 LoRA 插入层
-    LORA_TARGET = ["q_proj", "k_proj", "v_proj", "o_proj",  # 注意力
-               "gate_proj", "up_proj", "down_proj"]   # MLP
+    # LORA_TARGET = ["q_proj", "k_proj", "v_proj", "o_proj",  # 注意力
+    #            "gate_proj", "up_proj", "down_proj"]   # MLP
     
-    peft_config = LoraConfig(
-        task_type=TaskType.SEQ_CLS,
-        inference_mode=False,
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=LORA_TARGET,
-    )
-    model = get_peft_model(model, peft_config).to(device)
+    # peft_config = LoraConfig(
+    #     task_type=TaskType.SEQ_CLS,
+    #     inference_mode=False,
+    #     r=args.lora_r,
+    #     lora_alpha=args.lora_alpha,
+    #     target_modules=LORA_TARGET,
+    # )
+    # model = get_peft_model(model, peft_config)
+
+    # 可选：通过 --probe_layers 控制解冻层
+    import ast
+    probe_layers = None
+    if hasattr(args, 'probe_layers') and args.probe_layers:
+        try:
+            probe_layers = ast.literal_eval(args.probe_layers)
+            if not isinstance(probe_layers, list):
+                probe_layers = [str(probe_layers)]
+        except Exception:
+            probe_layers = [x.strip() for x in args.probe_layers.split(',') if x.strip()]
+    freeze_and_unfreeze(model, probe_layers)
+    print("可训练参数:")
+    trainable_count = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"  {name}")
+            trainable_count += param.numel()
+    print(f"可训练参数总量: {trainable_count}")
+    # 如果是peft模型，打印peft统计
+    if hasattr(model, 'print_trainable_parameters'):
+        model.print_trainable_parameters()
+    model = model.to(device)
 
     # 自动适配数据集和图片字段
     dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
@@ -141,7 +175,7 @@ if __name__ == '__main__':
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
-        save_steps=args.save_steps,
+        save_steps=99999999,  # 训练过程中不自动保存
         save_total_limit=3,
         fp16=args.fp16,
         bf16=args.bf16,
@@ -163,7 +197,8 @@ if __name__ == '__main__':
     training_start_time = time.time()
     
     trainer.train()
-    
+    # 训练完成后手动保存模型
+    trainer.save_model(args.output_dir)
     training_time = time.time() - training_start_time
     total_time = time.time() - start_time
     print(f"训练完成！")

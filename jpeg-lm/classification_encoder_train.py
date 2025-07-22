@@ -1,8 +1,8 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# JpegLM Encoder Architecture Training Script (Fixed)
+# 示例运行命令：
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --image_size 96 --dataset_mode mnist --disable_wandb --probe_layers "['classifier','pre_classifier']"
+
 # 将 JpegLM 从生成式语言模型改造成 encoder 架构进行分类任务
-# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --dataset_mode mnist --disable_wandb
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --image_size 96 --dataset_mode mnist --disable_wandb
 
 import argparse
 import torch
@@ -17,6 +17,18 @@ from transformers import (
 )
 from datasets import load_dataset
 from peft import get_peft_model, LoraConfig, TaskType
+
+# ===== 冻结和解冻指定层 =====
+def freeze_and_unfreeze(model, probe_layers=None):
+    # 冻结所有参数
+    for param in model.parameters():
+        param.requires_grad = False
+    # 解冻分类头和自定义层
+    probe_layers = probe_layers or ['classifier', 'pre_classifier']
+    for name, param in model.named_parameters():
+        for probe in probe_layers:
+            if probe in name:
+                param.requires_grad = True
 
 # 添加 utils 路径以导入统一的数据处理工具
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'utils'))
@@ -69,9 +81,10 @@ if __name__ == '__main__':
     parser.add_argument('--disable_wandb', action='store_true', help="禁用 W&B")
     parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist','cifar10','imagenet100'], help="数据集模式")
     parser.add_argument('--imagenet100_dir', type=str, default='/root/autodl-fs/datasets/imagenet100', help="imagenet100根目录")
-    parser.add_argument('--image_size', type=int, default=256, help="输入图像尺寸")
+    parser.add_argument('--image_size', type=int, default=96, help="输入图像尺寸")
     parser.add_argument('--max_seq_len', type=int, default=2048, help="最大序列长度")
     parser.add_argument('--pooling_strategy', type=str, default='mean', choices=['mean','max','cls','last'], help="池化策略")
+    parser.add_argument('--probe_layers', type=str, default=None, help="自定义解冻层名列表，如 ['classifier','pre_classifier'] 或 classifier,pre_classifier")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -94,20 +107,37 @@ if __name__ == '__main__':
         print("✓ 已启用梯度检查点以避免 OOM")
 
     # LoRA 设置
-    LORA_TARGET = ["q_proj","k_proj","v_proj","o_proj",
-                   "gate_proj","up_proj","down_proj"]
-    peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
-                              inference_mode=False,
-                              r=args.lora_r,
-                              lora_alpha=args.lora_alpha,
-                              target_modules=LORA_TARGET,
-                              lora_dropout=0.1)
-    model = get_peft_model(model, peft_config).to(device)
-
-    # 解冻分类头参数
+    # LORA_TARGET = ["q_proj","k_proj","v_proj","o_proj",
+    #                "gate_proj","up_proj","down_proj"]
+    # peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
+    #                           inference_mode=False,
+    #                           r=args.lora_r,
+    #                           lora_alpha=args.lora_alpha,
+    #                           target_modules=LORA_TARGET,
+    #                           lora_dropout=0.1)
+    # model = get_peft_model(model, peft_config)
+    
+    # 冻结和解冻指定层，可通过 --probe_layers 参数自定义
+    import ast
+    probe_layers = None
+    if hasattr(args, 'probe_layers') and args.probe_layers:
+        # 支持逗号分隔或 Python list 字符串
+        try:
+            probe_layers = ast.literal_eval(args.probe_layers)
+            if not isinstance(probe_layers, list):
+                probe_layers = [str(probe_layers)]
+        except Exception:
+            probe_layers = [x.strip() for x in args.probe_layers.split(',') if x.strip()]
+    freeze_and_unfreeze(model, probe_layers)
+    # 打印可训练参数
+    print("可训练参数:")
+    trainable_count = 0
     for name, param in model.named_parameters():
-        if 'classifier' in name or 'pre_classifier' in name:
-            param.requires_grad = True
+        if param.requires_grad:
+            print(f"  {name}")
+            trainable_count += param.numel()
+    print(f"可训练参数总量: {trainable_count}")
+    model = model.to(device)
 
     # 加载数据集
     if args.dataset_mode == 'imagenet100':
