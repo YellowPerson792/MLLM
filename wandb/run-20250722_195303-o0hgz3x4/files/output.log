@@ -1,0 +1,43 @@
+  0%|                                                                        | 0/1125 [00:00<?, ?it/s]/root/miniconda3/lib/python3.12/site-packages/torch/utils/checkpoint.py:86: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+  9%|█████▎                                                      | 100/1125 [13:37<2:19:58,  8.19s/it]Traceback (most recent call last):
+{'loss': 3.2651, 'grad_norm': 25.05304718017578, 'learning_rate': 0.0004982222222222223, 'epoch': 0.01}
+{'loss': 3.1052, 'grad_norm': 22.72791862487793, 'learning_rate': 0.000496, 'epoch': 0.03}
+{'loss': 2.8111, 'grad_norm': 23.823219299316406, 'learning_rate': 0.0004937777777777778, 'epoch': 0.04}
+{'loss': 2.383, 'grad_norm': 13.89306354522705, 'learning_rate': 0.0004915555555555556, 'epoch': 0.05}
+{'loss': 2.6656, 'grad_norm': 20.051002502441406, 'learning_rate': 0.0004893333333333334, 'epoch': 0.07}
+{'loss': 2.4264, 'grad_norm': 17.0301570892334, 'learning_rate': 0.0004871111111111111, 'epoch': 0.08}
+{'loss': 2.4006, 'grad_norm': 20.570981979370117, 'learning_rate': 0.00048488888888888887, 'epoch': 0.09}
+{'loss': 2.2622, 'grad_norm': 18.364521026611328, 'learning_rate': 0.00048266666666666667, 'epoch': 0.11}
+{'loss': 2.4461, 'grad_norm': 22.843229293823242, 'learning_rate': 0.0004804444444444445, 'epoch': 0.12}
+{'loss': 2.1293, 'grad_norm': 22.607030868530273, 'learning_rate': 0.0004782222222222222, 'epoch': 0.13}
+{'loss': 2.1674, 'grad_norm': 24.365137100219727, 'learning_rate': 0.00047599999999999997, 'epoch': 0.15}
+{'loss': 2.2285, 'grad_norm': 22.224411010742188, 'learning_rate': 0.0004737777777777778, 'epoch': 0.16}
+{'loss': 2.6009, 'grad_norm': 25.171157836914062, 'learning_rate': 0.0004715555555555556, 'epoch': 0.17}
+{'loss': 2.2981, 'grad_norm': 13.473055839538574, 'learning_rate': 0.0004693333333333333, 'epoch': 0.19}
+{'loss': 2.7024, 'grad_norm': 22.555591583251953, 'learning_rate': 0.0004671111111111111, 'epoch': 0.2}
+{'loss': 2.0758, 'grad_norm': 21.1602840423584, 'learning_rate': 0.0004648888888888889, 'epoch': 0.21}
+{'loss': 2.2649, 'grad_norm': 26.57817268371582, 'learning_rate': 0.0004626666666666667, 'epoch': 0.23}
+{'loss': 2.0482, 'grad_norm': 20.24994468688965, 'learning_rate': 0.0004604444444444444, 'epoch': 0.24}
+{'loss': 2.205, 'grad_norm': 20.687679290771484, 'learning_rate': 0.0004582222222222222, 'epoch': 0.25}
+{'loss': 2.1852, 'grad_norm': 22.66913604736328, 'learning_rate': 0.000456, 'epoch': 0.27}
+  File "/root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py", line 328, in <module>
+    trainer.train()
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 2240, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 2622, in _inner_training_loop
+    self._maybe_log_save_evaluate(
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 3102, in _maybe_log_save_evaluate
+    self._save_checkpoint(model, trial)
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 3199, in _save_checkpoint
+    self.save_model(output_dir, _internal_call=True)
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 3911, in save_model
+    self._save(output_dir)
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/trainer.py", line 4015, in _save
+    self.model.save_pretrained(
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/modeling_utils.py", line 3717, in save_pretrained
+    safe_save_file(shard, os.path.join(save_directory, shard_file), metadata={"format": "pt"})
+  File "/root/miniconda3/lib/python3.12/site-packages/safetensors/torch.py", line 286, in save_file
+    serialize_file(_flatten(tensors), filename, metadata=metadata)
+safetensors_rust.SafetensorError: Error while serializing: IoError(Os { code: 28, kind: StorageFull, message: "No space left on device" })

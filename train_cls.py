@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb
+# Example: python /root/autodl-tmp/MLLM/jpeg-lm/train_cls.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-mnist-v5 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode cifar10 --max_seq_len 1100 --disable_wandb
 
 import argparse
 import torch
 import sys
 import os
 # 添加utils路径以导入统一的数据处理工具
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'utils'))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
 from data_utils import tokenize_example_for_training, get_dataset_config, create_preprocess_transform
 
 from datasets import load_dataset

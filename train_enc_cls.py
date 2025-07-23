@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # JpegLM Encoder Architecture Training Script (Fixed)
 # 将 JpegLM 从生成式语言模型改造成 encoder 架构进行分类任务
-# python /root/autodl-tmp/MLLM/jpeg-lm/train_encoder.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --disable_wandb
+# python /root/autodl-tmp/MLLM/jpeg-lm/train_enc_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --disable_wandb
 
 import argparse
 import torch
@@ -22,7 +22,7 @@ from datasets import load_dataset
 from peft import get_peft_model, LoraConfig, TaskType
 
 # 添加 utils 路径以导入统一的数据处理工具
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'utils'))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
 from data_utils import tokenize_example_for_training, get_dataset_config, create_preprocess_transform
 
 MAX_SEQ_LEN = 2048
@@ -227,7 +227,8 @@ if __name__ == '__main__':
         fp16=args.fp16,
         bf16=args.bf16,
         seed=args.seed,
-        eval_strategy='epoch',
+        eval_strategy='steps',
+        eval_steps=1,
         report_to=[] if args.disable_wandb else ['wandb'],
         run_name=None if args.disable_wandb else args.wandb_run_name,
     )

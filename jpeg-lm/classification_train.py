@@ -175,8 +175,8 @@ if __name__ == '__main__':
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
-        save_steps=99999999,  # 训练过程中不自动保存
-        save_total_limit=3,
+        save_steps=args.save_steps,  # 训练过程中不自动保存
+        save_total_limit=1,
         fp16=args.fp16,
         bf16=args.bf16,
         seed=args.seed,
