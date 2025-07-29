@@ -1,5 +1,6 @@
 checkpoints/
 __pycache__/
+.ipynb_checkpoints/
 huggingface_token
 trained_models/
 datasets/
