@@ -7,3 +7,4 @@ models/
 LLaMA-Factory/
 image-captioning-output/
 VIT_large_gpt2/
+ImageCaption/VIT_GPT2_EDM/
