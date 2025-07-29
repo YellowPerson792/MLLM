@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --fp16 --max_length 2048 ----image_size 224
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --fp16 --max_length 2048 --image_size 224
 
 import sys
 import os
