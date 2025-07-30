@@ -55,10 +55,13 @@ class MySeq2SeqTrainer:
         use_amp = args.fp16 or args.bf16
         scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
         optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
-        total_steps = args.num_train_epochs * len(train_loader)
-        scheduler = self._create_scheduler(optimizer, total_steps)
-        progress_bar = tqdm(total=total_steps, desc="Training", ncols=100)
-        global_step = 0
+        # 计算真实的optimizer step总数（考虑梯度累计）
+        total_batch_steps = args.num_train_epochs * len(train_loader)
+        total_optimizer_steps = (total_batch_steps + args.gradient_accumulation_steps - 1) // args.gradient_accumulation_steps
+        scheduler = self._create_scheduler(optimizer, total_optimizer_steps)
+        progress_bar = tqdm(total=total_batch_steps, desc="Training", ncols=100)
+        global_step = 0  # batch step计数
+        optimizer_step = 0  # optimizer step计数
         saved_checkpoints = []
         for epoch in range(args.num_train_epochs):
             epoch_loss = 0
@@ -84,10 +87,14 @@ class MySeq2SeqTrainer:
                         optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
+                    optimizer_step += 1  # 真正的optimizer step计数
                 epoch_loss += loss.item() * args.gradient_accumulation_steps
-                global_step += 1
+                global_step += 1  # batch step计数
                 progress_bar.update(1)
+                real_epoch = epoch + (step + 1) / len(train_loader)
                 progress_bar.set_postfix({
+                    "ep": f"{real_epoch:.2f}/{args.num_train_epochs}",
+                    "step": global_step,
                     "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
                     "lr": f"{scheduler.get_last_lr()[0]:.2e}"
                 })
@@ -96,35 +103,35 @@ class MySeq2SeqTrainer:
                     # 计算真实epoch进度
                     real_epoch = epoch + (step + 1) / len(train_loader)
                     log_str = (
-                        f"[Step {global_step:>5}] | Epoch: {real_epoch:>6.3f} | "
-                        f"loss: {current_loss:>8.4f} | grad_norm: {grad_norm:>8.4f} | lr: {scheduler.get_last_lr()[0]:.2e}"
+                        f"[Batch {global_step:>5}] [Opt {optimizer_step:>4}] [Ep {real_epoch:>6.3f}] | "
+                        f"Loss: {current_loss:>7.4f} | GradNorm: {grad_norm:>7.3f} | LR: {scheduler.get_last_lr()[0]:.2e}"
                     )
                     tqdm.write(log_str)
-                    # 日志上报
+                    # 日志上报 (按HF标准格式)
                     if self._wandb is not None:
                         self._wandb.log({
                             'train/loss': current_loss,
                             'train/grad_norm': grad_norm,
-                            'train/lr': scheduler.get_last_lr()[0],
-                            'epoch': epoch+1,
-                            'step': global_step
+                            'train/learning_rate': scheduler.get_last_lr()[0],
+                            'train/epoch': real_epoch,
+                            'train/global_step': global_step
                         }, step=global_step)
                     if self._tb_writer is not None:
                         self._tb_writer.add_scalar('train/loss', current_loss, global_step)
                         self._tb_writer.add_scalar('train/grad_norm', grad_norm, global_step)
-                        self._tb_writer.add_scalar('train/lr', scheduler.get_last_lr()[0], global_step)
+                        self._tb_writer.add_scalar('train/learning_rate', scheduler.get_last_lr()[0], global_step)
                 if args.eval_strategy == "steps" and args.eval_steps > 0 and global_step % args.eval_steps == 0 and val_loader is not None:
                     val_result = self.evaluate(val_loader, desc=f"Eval@Step{global_step}")
                     if isinstance(val_result, tuple):
                         val_loss, metrics = val_result
                         metrics_str = ' | '.join([f"{k}: {float(v):.4f}" for k, v in metrics.items()]) if isinstance(metrics, dict) else str(metrics)
                         log_str = (
-                            f"[Step {global_step:>5}] | Val loss: {val_loss:>8.4f} | {metrics_str}"
+                            f"[Batch {global_step:>5}] [EVAL] | Loss: {val_loss:>7.4f} | {metrics_str}"
                         )
                         tqdm.write(log_str)
-                        # 日志上报
+                        # 日志上报 (按HF标准格式)
                         if self._wandb is not None:
-                            log_dict = {'eval/loss': val_loss, 'epoch': epoch+1, 'step': global_step}
+                            log_dict = {'eval/loss': val_loss, 'train/epoch': real_epoch, 'train/global_step': global_step}
                             if isinstance(metrics, dict):
                                 for k, v in metrics.items():
                                     log_dict[f'eval/{k}'] = float(v)
@@ -135,26 +142,30 @@ class MySeq2SeqTrainer:
                                 for k, v in metrics.items():
                                     self._tb_writer.add_scalar(f'eval/{k}', float(v), global_step)
                     else:
-                        tqdm.write(f"[Step {global_step:>5}] | Val loss: {val_result:>8.4f}")
+                        tqdm.write(f"[Batch {global_step:>5}] [EVAL] | Loss: {val_result:>7.4f}")
                         if self._wandb is not None:
-                            self._wandb.log({'eval/loss': val_result, 'epoch': epoch+1, 'step': global_step}, step=global_step)
+                            self._wandb.log({'eval/loss': val_result, 'train/epoch': real_epoch, 'train/global_step': global_step}, step=global_step)
                         if self._tb_writer is not None:
                             self._tb_writer.add_scalar('eval/loss', val_result, global_step)
                 if args.save_steps > 0 and global_step % args.save_steps == 0:
+                    tqdm.write(f"[Batch {global_step:>5}] [SAVE] | 保存检查点到 checkpoint-{global_step}")
                     self._save_checkpoint(global_step, saved_checkpoints)
             avg_loss = epoch_loss / len(train_loader)
-            tqdm.write(f"[Epoch {epoch+1}] Train loss: {avg_loss:.4f}")
+            tqdm.write(f"=== [EPOCH {epoch+1}/{args.num_train_epochs} 完成] | 平均Loss: {avg_loss:.4f} | 总Batch步数: {global_step} | 总Opt步数: {optimizer_step} ===")
             if args.eval_strategy == "epoch" and val_loader is not None:
                 val_result = self.evaluate(val_loader, desc=f"Epoch {epoch+1}/{args.num_train_epochs} [Val]")
                 if isinstance(val_result, tuple):
                     val_loss, metrics = val_result
-                    tqdm.write(f"[Epoch {epoch+1}] Val loss: {val_loss:.4f} | metrics: {metrics}")
+                    tqdm.write(f"[EPOCH {epoch+1}] [EVAL] | Loss: {val_loss:.4f} | Metrics: {metrics}")
                 else:
-                    tqdm.write(f"[Epoch {epoch+1}] Val loss: {val_result:.4f}")
+                    tqdm.write(f"[EPOCH {epoch+1}] [EVAL] | Loss: {val_result:.4f}")
             if args.save_steps == -1:
+                tqdm.write(f"[EPOCH {epoch+1}] [SAVE] | 保存epoch检查点到 checkpoint-epoch{epoch+1}")
                 self._save_checkpoint(f"epoch{epoch+1}", saved_checkpoints)
         progress_bar.close()
-        tqdm.write("训练完成！")
+        tqdm.write("=" * 80)
+        tqdm.write(f"🎉 训练完成！总计 {args.num_train_epochs} 个epoch，{global_step} 个batch步数，{optimizer_step} 个优化器步数")
+        tqdm.write("=" * 80)
 
     def evaluate(self, val_loader=None, desc="Eval"):
         if val_loader is None:
@@ -171,12 +182,15 @@ class MySeq2SeqTrainer:
         while self.args.save_total_limit > 0 and len(saved_checkpoints) > self.args.save_total_limit:
             shutil.rmtree(saved_checkpoints.pop(0))
 
-    def _create_scheduler(self, optimizer, total_steps):
+    def _create_scheduler(self, optimizer, total_optimizer_steps):
         """创建学习率调度器"""
+        # 将warmup_steps从batch step转为optimizer step（如果需要）
+        warmup_optimizer_steps = self.args.warmup_steps // self.args.gradient_accumulation_steps if self.args.warmup_steps > 0 else 0
+        
         if self.args.lr_scheduler_type == "linear":
-            return LambdaLR(optimizer, lambda s: s / max(1, self.args.warmup_steps) if s < self.args.warmup_steps else max(0.0, (total_steps - s) / max(1, total_steps - self.args.warmup_steps)))
+            return LambdaLR(optimizer, lambda s: s / max(1, warmup_optimizer_steps) if s < warmup_optimizer_steps else max(0.0, (total_optimizer_steps - s) / max(1, total_optimizer_steps - warmup_optimizer_steps)))
         if self.args.lr_scheduler_type == "cosine":
-            return CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=0)
+            return CosineAnnealingLR(optimizer, T_max=total_optimizer_steps, eta_min=0)
         if self.args.lr_scheduler_type == "constant":
             return LambdaLR(optimizer, lambda _: 1.0)
         raise ValueError(f"Unsupported lr_scheduler_type: {self.args.lr_scheduler_type}")

@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 1 --eval_batch_size 1 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 999999 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --bf16 --max_length 2048 --image_size 96
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 1 --eval_batch_size 1 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --bf16 --max_length 2048 --image_size 96
 
 import sys
 import os
@@ -24,7 +24,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 
 # 配置
 class config:
-    ENCODER = "/root/autodl-tmp/MLLM/models/jpeg-lm"
+    ENCODER = "/root/autodl-fs/models/jpeg-lm"
     DECODER = "gpt2"
     SEED = 42
     MAX_LEN = 18
@@ -237,22 +237,13 @@ my_args = MySeq2SeqTrainingArguments(
 #         param.requires_grad = False
 # print("仅训练cross-attention层，其余参数已冻结。")
 
-
-trainer = MySeq2SeqTrainer(
-    model=model,
-    args=my_args,
-    train_dataset=train_dataset,
-    eval_dataset=val_dataset,
-    tokenizer=decoder_tokenizer,
-    compute_metrics=compute_metrics,
-    data_collator=dynamic_pad_collate_fn
-)
-
-
-# 先开启梯度检查点
-# model.gradient_checkpointing_enable()
-
-# LoRA配置 - 只应用到encoder
+# 自动收集所有decoder.transformer.h的子模块名
+h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+modules_to_save = h_modules + [
+    "decoder.transformer.ln_f",
+    "decoder.lm_head",
+    "enc_to_dec_proj"
+]
 lora_config = LoraConfig(
     task_type=TaskType.SEQ_2_SEQ_LM,
     inference_mode=False,
@@ -264,31 +255,30 @@ lora_config = LoraConfig(
         "gate_proj", "up_proj", "down_proj",     # MLP层
         "fc1", "fc2", "dense"                    # 其他可能的线性层
     ],
-    modules_to_save=None,  # 不保存任何额外模块
+    modules_to_save=modules_to_save,
     lora_dropout=0.1
 )
 model = get_peft_model(model, lora_config)
-
-# 手动解冻GPT2 decoder的全部参数，保持encoder的LoRA参数
-for name, param in model.named_parameters():
-    if "decoder" in name and "lora" not in name.lower():
-        param.requires_grad = True
-    elif "encoder" in name and "lora" not in name.lower():
-        # 确保encoder的原始参数被冻结，只训练LoRA
-        param.requires_grad = False
-    # 额外解冻enc_to_dec_proj
-    if name.endswith("enc_to_dec_proj.weight") or name.endswith("enc_to_dec_proj.bias"):
-        param.requires_grad = True
-        
-
-print("配置完成：encoder使用LoRA，GPT2 decoder全参数训练")
 model.print_trainable_parameters()
+
+# 开启梯度检查点
+model.gradient_checkpointing_enable()
 
 # 打印所有参数的requires_grad状态
 print("\n==== 各层参数 requires_grad 状态 ====")
 for name, param in model.named_parameters():
     print(f"{name:80} requires_grad={param.requires_grad}")
 print("==== END ====")
+
+trainer = MySeq2SeqTrainer(
+    model=model,
+    args=my_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    tokenizer=decoder_tokenizer,
+    compute_metrics=compute_metrics,
+    data_collator=dynamic_pad_collate_fn
+)
 
 trainer.train()
 trainer.save_model()
