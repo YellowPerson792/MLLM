@@ -20,7 +20,7 @@ from sklearn.model_selection import train_test_split
 import datasets
 import multiprocessing as mp
 from utils.data_utils import convert_img_to_bytes, create_preprocess_transform
-from peft import get_peft_model, LoraConfig, TaskType
+from peft import get_peft_model, LoraConfig, TaskType, PeftModel
 
 # 配置
 class config:
@@ -69,6 +69,7 @@ parser.add_argument('--bf16', action='store_true')
 parser.add_argument('--image_size', type=int, default=224, help='输入图片resize的边长')
 parser.add_argument('--bit_flip_prob', type=float, default=0.0, help='JPEG比特流随机翻转概率')
 parser.add_argument('--max_length', type=int, default=2000, help='JPEG比特流token序列最大长度')
+parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='从指定checkpoint恢复训练状态（不是预训练权重）')
 args = parser.parse_args()
 
 
@@ -237,6 +238,7 @@ my_args = MySeq2SeqTrainingArguments(
 #         param.requires_grad = False
 # print("仅训练cross-attention层，其余参数已冻结。")
 
+
 # 自动收集所有decoder.transformer.h的子模块名
 h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
 modules_to_save = h_modules + [
@@ -258,8 +260,24 @@ lora_config = LoraConfig(
     modules_to_save=modules_to_save,
     lora_dropout=0.1
 )
-model = get_peft_model(model, lora_config)
-model.print_trainable_parameters()
+
+# model = get_peft_model(model, lora_config)
+# model.print_trainable_parameters()
+
+# 检查是否有预训练的检查点需要加载
+checkpoint_path = "/root/autodl-fs/trained_models/jpeglm/checkpoint-5632"
+model_already_loaded = False
+
+if os.path.exists(checkpoint_path):
+    print(f"发现预训练检查点: {checkpoint_path}")
+    model = PeftModel.from_pretrained(model, checkpoint_path)
+    model_already_loaded = True
+    print("✓ 预训练检查点加载完成")
+else:
+    # 如果没有预训练检查点，则初始化PEFT模型
+    print("未找到预训练检查点，初始化新的PEFT模型")
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
 
 # 开启梯度检查点
 model.gradient_checkpointing_enable()
@@ -280,7 +298,16 @@ trainer = MySeq2SeqTrainer(
     data_collator=dynamic_pad_collate_fn
 )
 
-trainer.train()
+# 如果模型已经预加载，则传入model_already_loaded=True避免重复加载
+if model_already_loaded:
+    print("使用预加载模型进行训练")
+    if args.resume_from_checkpoint:
+        print(f"从checkpoint恢复训练状态: {args.resume_from_checkpoint}")
+        trainer.train(resume_from_checkpoint=args.resume_from_checkpoint, model_already_loaded=True)
+    else:
+        trainer.train(model_already_loaded=True)
+else:
+    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)  # 传统方式，支持完整checkpoint恢复
 trainer.save_model()
 
 

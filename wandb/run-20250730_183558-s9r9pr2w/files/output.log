@@ -1,0 +1,9 @@
+尝试从 checkpoint 恢复: /root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning/checkpoint-10240
+Traceback (most recent call last):
+  File "/root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py", line 284, in <module>
+    trainer.train(resume_from_checkpoint="/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning/checkpoint-10240")  # 如果有断点续训需求，可以传入checkpoint路径
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 65, in train
+    self.model = self.model.from_pretrained(checkpoint_dir)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PeftModel.from_pretrained() missing 1 required positional argument: 'model_id'

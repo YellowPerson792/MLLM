@@ -37,8 +37,14 @@ class MySeq2SeqTrainer:
                 except ImportError:
                     print('tensorboard not installed, skipping tensorboard logging.')
 
-    def train(self):
-        model = self.model
+    def train(self, resume_from_checkpoint=None, model_already_loaded=False):
+        """
+        训练函数
+        Args:
+            resume_from_checkpoint: checkpoint路径
+            model_already_loaded: 如果为True，表示模型权重已经预先加载（如通过PeftModel.from_pretrained），
+                                只需要恢复训练状态，不再加载模型权重
+        """
         args = self.args
         # 使用data_collator（如果有）
         train_loader = DataLoader(
@@ -52,27 +58,184 @@ class MySeq2SeqTrainer:
             batch_size=args.eval_batch_size,
             collate_fn=self.data_collator if self.data_collator is not None else None
         ) if self.eval_dataset is not None else None
+        
+        # ====== checkpoint 恢复逻辑（必须在创建optimizer之前） ======
+        global_step = 0  # batch step计数
+        optimizer_step = 0  # optimizer step计数
+        start_epoch = 0
+        start_step_in_epoch = 0
+        
+        if resume_from_checkpoint is not None:
+            checkpoint_dir = resume_from_checkpoint
+            print(f"尝试从 checkpoint 恢复: {checkpoint_dir}")
+            
+            if not model_already_loaded:
+                # 模型权重还未加载，需要进行完整的模型恢复
+                print("执行完整的模型权重恢复...")
+                
+                # 保存原始模型的重要配置
+                was_gradient_checkpointing = getattr(self.model, 'gradient_checkpointing', False)
+                
+                # 检查是否是 PEFT 模型
+                is_peft_model = False
+                try:
+                    from peft import PeftModel
+                    is_peft_model = isinstance(self.model, PeftModel)
+                    if is_peft_model:
+                        print("检测到 PEFT 模型")
+                except ImportError:
+                    pass
+                
+                # 恢复模型权重 - 采用原地更新而不是重新创建
+                try:
+                    if is_peft_model:
+                        # PEFT 模型：使用特殊的恢复方式
+                        print("使用 PEFT 模型恢复方式")
+                        base_model = self.model.get_base_model()
+                        self.model = PeftModel.from_pretrained(base_model, checkpoint_dir)
+                    else:
+                        # 普通模型：尝试原地加载权重
+                        print("尝试原地加载模型权重...")
+                        # 优先尝试加载 safetensors 格式
+                        weight_files = ["pytorch_model.safetensors", "pytorch_model.bin"]
+                        loaded = False
+                        
+                        for weight_file in weight_files:
+                            weight_path = os.path.join(checkpoint_dir, weight_file)
+                            if os.path.exists(weight_path):
+                                try:
+                                    print(f"加载权重文件: {weight_file}")
+                                    if weight_file.endswith('.safetensors'):
+                                        from safetensors.torch import load_file
+                                        state_dict = load_file(weight_path)
+                                    else:
+                                        state_dict = torch.load(weight_path, map_location=self.device)
+                                    
+                                    # 原地加载权重，保持模型结构不变
+                                    missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+                                    if missing_keys:
+                                        print(f"缺失的键: {len(missing_keys)} 个")
+                                    if unexpected_keys:
+                                        print(f"意外的键: {len(unexpected_keys)} 个")
+                                    print(f"✓ 成功原地加载权重: {weight_file}")
+                                    loaded = True
+                                    break
+                                except Exception as e:
+                                    print(f"加载 {weight_file} 失败: {e}")
+                                    continue
+                        
+                        if not loaded:
+                            print("原地加载失败，尝试 from_pretrained 方式...")
+                            self.model = self.model.from_pretrained(checkpoint_dir)
+                            print("⚠️ 使用了 from_pretrained，可能需要重新配置模型")
+                            
+                except Exception as e:
+                    print(f"模型恢复失败: {e}")
+                    print("跳过模型恢复，使用原始模型权重")
+                
+                # 确保模型在正确设备上
+                self.model.to(self.device)
+                
+                # 恢复梯度检查点设置
+                if was_gradient_checkpointing and hasattr(self.model, 'gradient_checkpointing_enable'):
+                    print("重新启用梯度检查点")
+                    self.model.gradient_checkpointing_enable()
+                
+                # 恢复分词器
+                if self.tokenizer is not None:
+                    try:
+                        self.tokenizer = self.tokenizer.from_pretrained(checkpoint_dir)
+                        print("✓ 恢复分词器")
+                    except:
+                        print("分词器恢复失败，使用原始分词器")
+                
+                print(f"✓ 模型恢复完成，设备: {self.model.device}")
+                print(f"✓ 模型类型: {type(self.model)}")
+                if hasattr(self.model, 'gradient_checkpointing'):
+                    print(f"✓ 梯度检查点: {self.model.gradient_checkpointing}")
+            else:
+                # 模型权重已经预先加载，跳过模型恢复，只恢复训练状态
+                print("✓ 模型权重已预先加载，跳过模型恢复步骤")
+                print(f"✓ 当前模型设备: {self.model.device}")
+                print(f"✓ 当前模型类型: {type(self.model)}")
+                if hasattr(self.model, 'gradient_checkpointing'):
+                    print(f"✓ 梯度检查点状态: {self.model.gradient_checkpointing}")
+            
+            # 恢复训练状态计数器（无论模型是否预加载都需要恢复）
+            state_path = os.path.join(checkpoint_dir, "trainer_state.pt")
+            if os.path.exists(state_path):
+                state = torch.load(state_path, map_location="cpu")
+                global_step = state.get("global_step", 0)
+                optimizer_step = state.get("optimizer_step", 0)
+                start_epoch = state.get("epoch", 0)
+                start_step_in_epoch = state.get("step_in_epoch", 0)
+                print(f"✓ 恢复计数: global_step={global_step}, optimizer_step={optimizer_step}, epoch={start_epoch}, step_in_epoch={start_step_in_epoch}")
+            else:
+                print("未检测到 trainer_state.pt，计数器使用初始状态")
+        
+        # 在模型恢复后创建 optimizer/scheduler/scaler（重要！）
         use_amp = args.fp16 or args.bf16
         scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
-        optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
+        optimizer = optim.AdamW(self.model.parameters(), lr=args.learning_rate)
         # 计算真实的optimizer step总数（考虑梯度累计）
         total_batch_steps = args.num_train_epochs * len(train_loader)
         total_optimizer_steps = (total_batch_steps + args.gradient_accumulation_steps - 1) // args.gradient_accumulation_steps
         scheduler = self._create_scheduler(optimizer, total_optimizer_steps)
         progress_bar = tqdm(total=total_batch_steps, desc="Training", ncols=100)
-        global_step = 0  # batch step计数
-        optimizer_step = 0  # optimizer step计数
         saved_checkpoints = []
-        for epoch in range(args.num_train_epochs):
+
+        # 恢复 optimizer/scheduler/scaler 状态（在创建后）
+        if resume_from_checkpoint is not None:
+            checkpoint_dir = resume_from_checkpoint
+            # 恢复 optimizer/scheduler/scaler 状态
+            opt_path = os.path.join(checkpoint_dir, "optimizer.pt")
+            sch_path = os.path.join(checkpoint_dir, "scheduler.pt")
+            scaler_path = os.path.join(checkpoint_dir, "scaler.pt")
+            if os.path.exists(opt_path):
+                optimizer.load_state_dict(torch.load(opt_path, map_location=self.device))
+                print("✓ 恢复 optimizer 状态")
+            else:
+                print("未检测到 optimizer.pt，optimizer 使用初始状态")
+            if os.path.exists(sch_path):
+                scheduler.load_state_dict(torch.load(sch_path, map_location=self.device))
+                print("✓ 恢复 scheduler 状态")
+            else:
+                print("未检测到 scheduler.pt，scheduler 使用初始状态")
+            if os.path.exists(scaler_path):
+                scaler.load_state_dict(torch.load(scaler_path, map_location=self.device))
+                print("✓ 恢复 scaler 状态")
+            else:
+                print("未检测到 scaler.pt，scaler 使用初始状态")
+            
+            # 恢复计数器
+            state_path = os.path.join(checkpoint_dir, "trainer_state.pt")
+            if os.path.exists(state_path):
+                state = torch.load(state_path, map_location="cpu")
+                global_step = state.get("global_step", 0)
+                optimizer_step = state.get("optimizer_step", 0)
+                start_epoch = state.get("epoch", 0)
+                start_step_in_epoch = state.get("step_in_epoch", 0)
+                print(f"✓ 恢复计数: global_step={global_step}, optimizer_step={optimizer_step}, epoch={start_epoch}, step_in_epoch={start_step_in_epoch}")
+            else:
+                print("未检测到 trainer_state.pt，计数器使用初始状态")
+            # 进度条同步
+            progress_bar.n = global_step
+            progress_bar.last_print_n = global_step
+            progress_bar.refresh()
+
+        for epoch in range(start_epoch, args.num_train_epochs):
             epoch_loss = 0
             optimizer.zero_grad()
             for step, batch in enumerate(train_loader):
-                model.train()
+                # 跳过已完成的 step（仅在恢复时生效）
+                if epoch == start_epoch and step < start_step_in_epoch:
+                    continue
+                self.model.train()
                 # 动态获取主输入名
-                input_name = getattr(model, 'main_input_name', 'input_ids')
+                input_name = getattr(self.model, 'main_input_name', 'input_ids')
                 model_inputs = {input_name: batch[input_name].to(self.device), 'labels': batch['labels'].to(self.device)}
                 with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
-                    outputs = model(**model_inputs)
+                    outputs = self.model(**model_inputs)
                     loss = outputs.loss / args.gradient_accumulation_steps
                 if use_amp:
                     scaler.scale(loss).backward()
@@ -149,7 +312,7 @@ class MySeq2SeqTrainer:
                             self._tb_writer.add_scalar('eval/loss', val_result, global_step)
                 if args.save_steps > 0 and global_step % args.save_steps == 0:
                     tqdm.write(f"[Batch {global_step:>5}] [SAVE] | 保存检查点到 checkpoint-{global_step}")
-                    self._save_checkpoint(global_step, saved_checkpoints)
+                    self._save_checkpoint(global_step, saved_checkpoints, optimizer, scheduler, scaler, epoch, step)
             avg_loss = epoch_loss / len(train_loader)
             tqdm.write(f"=== [EPOCH {epoch+1}/{args.num_train_epochs} 完成] | 平均Loss: {avg_loss:.4f} | 总Batch步数: {global_step} | 总Opt步数: {optimizer_step} ===")
             if args.eval_strategy == "epoch" and val_loader is not None:
@@ -161,7 +324,7 @@ class MySeq2SeqTrainer:
                     tqdm.write(f"[EPOCH {epoch+1}] [EVAL] | Loss: {val_result:.4f}")
             if args.save_steps == -1:
                 tqdm.write(f"[EPOCH {epoch+1}] [SAVE] | 保存epoch检查点到 checkpoint-epoch{epoch+1}")
-                self._save_checkpoint(f"epoch{epoch+1}", saved_checkpoints)
+                self._save_checkpoint(f"epoch{epoch+1}", saved_checkpoints, optimizer, scheduler, scaler, epoch, 0)
         progress_bar.close()
         tqdm.write("=" * 80)
         tqdm.write(f"🎉 训练完成！总计 {args.num_train_epochs} 个epoch，{global_step} 个batch步数，{optimizer_step} 个优化器步数")
@@ -172,12 +335,28 @@ class MySeq2SeqTrainer:
             val_loader = DataLoader(self.eval_dataset, batch_size=self.args.eval_batch_size)
         return self._evaluate(val_loader, desc)
 
-    def _save_checkpoint(self, step, saved_checkpoints):
-        """保存检查点"""
+    def _save_checkpoint(self, step, saved_checkpoints, optimizer=None, scheduler=None, scaler=None, epoch=0, step_in_epoch=0):
+        """保存检查点，包括模型、分词器、optimizer、scheduler、scaler、计数器"""
         path = os.path.join(self.args.output_dir, f"checkpoint-{step}")
         os.makedirs(path, exist_ok=True)
         self.model.save_pretrained(path)
-        self.tokenizer.save_pretrained(path)
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(path)
+        # 保存 optimizer/scheduler/scaler 状态
+        if optimizer is not None:
+            torch.save(optimizer.state_dict(), os.path.join(path, "optimizer.pt"))
+        if scheduler is not None:
+            torch.save(scheduler.state_dict(), os.path.join(path, "scheduler.pt"))
+        if scaler is not None:
+            torch.save(scaler.state_dict(), os.path.join(path, "scaler.pt"))
+        # 保存计数器
+        state = {
+            "global_step": getattr(self, "global_step", 0),
+            "optimizer_step": getattr(self, "optimizer_step", 0),
+            "epoch": epoch,
+            "step_in_epoch": step_in_epoch
+        }
+        torch.save(state, os.path.join(path, "trainer_state.pt"))
         saved_checkpoints.append(path)
         while self.args.save_total_limit > 0 and len(saved_checkpoints) > self.args.save_total_limit:
             shutil.rmtree(saved_checkpoints.pop(0))

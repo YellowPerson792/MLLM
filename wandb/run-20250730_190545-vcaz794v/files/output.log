@@ -1,0 +1,466 @@
+使用预加载模型进行训练
+/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:178: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+Training:   0%|                                                           | 0/97092 [00:00<?, ?it/s]/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:237: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
+/root/miniconda3/lib/python3.12/site-packages/torch/utils/checkpoint.py:86: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+/root/miniconda3/lib/python3.12/site-packages/transformers/models/encoder_decoder/modeling_encoder_decoder.py:557: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.detach().clone() or sourceTensor.detach().clone().requires_grad_(True), rather than tensor.new_tensor(sourceTensor).
+  decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+/root/miniconda3/lib/python3.12/site-packages/transformers/models/encoder_decoder/modeling_encoder_decoder.py:577: FutureWarning: Version v4.12.0 introduces a better way to train encoder-decoder models by computing the loss inside the encoder-decoder framework rather than in the decoder itself. You may observe training discrepancies if fine-tuning a model trained with versions anterior to 4.12.0. The decoder_input_ids are now created based on the labels, no need to pass them yourself anymore.
+  warnings.warn(DEPRECATION_WARNING, FutureWarning)
+Training:   1%| | 512/97092 [03:32<11:04:11,  2.42it/s, ep=0.02/3, step=512, loss=2.0834, lr=5.00e-0The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+[Batch    64] [Opt    8] [Ep  0.002] | Loss:  3.0292 | GradNorm:   9.770 | LR: 6.25e-06
+[Batch   128] [Opt   16] [Ep  0.004] | Loss:  4.4788 | GradNorm:   9.512 | LR: 1.25e-05
+[Batch   192] [Opt   24] [Ep  0.006] | Loss:  6.0081 | GradNorm:   9.280 | LR: 1.88e-05
+[Batch   256] [Opt   32] [Ep  0.008] | Loss:  3.9584 | GradNorm:   9.504 | LR: 2.50e-05
+[Batch   320] [Opt   40] [Ep  0.010] | Loss:  4.2367 | GradNorm:   8.270 | LR: 3.13e-05
+[Batch   384] [Opt   48] [Ep  0.012] | Loss:  2.6916 | GradNorm:   8.628 | LR: 3.75e-05
+[Batch   448] [Opt   56] [Ep  0.014] | Loss:  3.7615 | GradNorm:  10.135 | LR: 4.37e-05
+[Batch   512] [Opt   64] [Ep  0.016] | Loss:  2.0834 | GradNorm:  12.103 | LR: 5.00e-05
+Passing a tuple of `past_key_values` is deprecated and will be removed in Transformers v4.53.0. You should pass an instance of `Cache` instead, e.g. `past_key_values=DynamicCache.from_legacy_cache(past_key_values)`.
+Training:   1%| | 512/97092 [03:46<11:04:11,  2.42it/s, ep=0.02/3, step=512, loss=2.0834, lr=5.00e-0/root/miniconda3/lib/python3.12/site-packages/peft/utils/save_and_load.py:236: UserWarning: Could not find a config file in  - will assume that the vocabulary was not modified.
+  warnings.warn(                                                                                    
+[Batch   512] [EVAL] | Loss:  2.7231 | rouge2_fmeasure: 0.0000 | bleu1: 0.0256 | bleu4: 0.0064
+[Batch   512] [SAVE] | 保存检查点到 checkpoint-512
+                                                                                                    
+[Batch   576] [Opt   72] [Ep  0.018] | Loss:  2.6378 | GradNorm:   7.692 | LR: 5.00e-05
+[Batch   640] [Opt   80] [Ep  0.020] | Loss:  2.4182 | GradNorm:   9.407 | LR: 4.99e-05
+[Batch   704] [Opt   88] [Ep  0.022] | Loss:  3.3006 | GradNorm:   9.010 | LR: 4.99e-05
+[Batch   768] [Opt   96] [Ep  0.024] | Loss:  1.7773 | GradNorm:   6.931 | LR: 4.99e-05
+[Batch   832] [Opt  104] [Ep  0.026] | Loss:  3.4808 | GradNorm:   8.799 | LR: 4.98e-05
+[Batch   896] [Opt  112] [Ep  0.028] | Loss:  2.6784 | GradNorm:   9.431 | LR: 4.98e-05
+[Batch   960] [Opt  120] [Ep  0.030] | Loss:  3.0244 | GradNorm:   8.705 | LR: 4.98e-05
+[Batch  1024] [Opt  128] [Ep  0.032] | Loss:  2.8139 | GradNorm:   7.452 | LR: 4.97e-05
+                                                                                                    
+[Batch  1024] [EVAL] | Loss:  2.8200 | rouge2_fmeasure: 0.0000 | bleu1: 0.1516 | bleu4: 0.0171
+[Batch  1024] [SAVE] | 保存检查点到 checkpoint-1024
+[Batch  1088] [Opt  136] [Ep  0.034] | Loss:  4.2446 | GradNorm:   8.546 | LR: 4.97e-05
+[Batch  1152] [Opt  144] [Ep  0.036] | Loss:  4.0066 | GradNorm:   6.702 | LR: 4.97e-05
+[Batch  1216] [Opt  152] [Ep  0.038] | Loss:  4.7444 | GradNorm:   7.531 | LR: 4.96e-05
+[Batch  1280] [Opt  160] [Ep  0.040] | Loss:  1.2367 | GradNorm:   7.260 | LR: 4.96e-05
+[Batch  1344] [Opt  168] [Ep  0.042] | Loss:  3.1377 | GradNorm:   7.080 | LR: 4.96e-05
+[Batch  1408] [Opt  176] [Ep  0.044] | Loss:  2.5374 | GradNorm:   7.519 | LR: 4.95e-05
+[Batch  1472] [Opt  184] [Ep  0.045] | Loss:  3.3736 | GradNorm:   6.972 | LR: 4.95e-05
+[Batch  1536] [Opt  192] [Ep  0.047] | Loss:  1.6235 | GradNorm:   6.142 | LR: 4.95e-05
+[Batch  1536] [EVAL] | Loss:  2.8310 | rouge2_fmeasure: 0.0364 | bleu1: 0.1497 | bleu4: 0.0251
+[Batch  1536] [SAVE] | 保存检查点到 checkpoint-1536
+[Batch  1600] [Opt  200] [Ep  0.049] | Loss:  2.5438 | GradNorm:   6.552 | LR: 4.94e-05
+[Batch  1664] [Opt  208] [Ep  0.051] | Loss:  3.0780 | GradNorm:   7.693 | LR: 4.94e-05
+[Batch  1728] [Opt  216] [Ep  0.053] | Loss:  4.6286 | GradNorm:   6.072 | LR: 4.94e-05
+[Batch  1792] [Opt  224] [Ep  0.055] | Loss:  2.5169 | GradNorm:   7.209 | LR: 4.93e-05
+[Batch  1856] [Opt  232] [Ep  0.057] | Loss:  4.3843 | GradNorm:   6.128 | LR: 4.93e-05
+[Batch  1920] [Opt  240] [Ep  0.059] | Loss:  2.0810 | GradNorm:   6.363 | LR: 4.93e-05
+[Batch  1984] [Opt  248] [Ep  0.061] | Loss:  1.9824 | GradNorm:   6.804 | LR: 4.92e-05
+[Batch  2048] [Opt  256] [Ep  0.063] | Loss:  2.6778 | GradNorm:   6.243 | LR: 4.92e-05
+[Batch  2048] [EVAL] | Loss:  2.7728 | rouge2_fmeasure: 0.0190 | bleu1: 0.1708 | bleu4: 0.0255
+[Batch  2048] [SAVE] | 保存检查点到 checkpoint-2048
+[Batch  2112] [Opt  264] [Ep  0.065] | Loss:  2.9094 | GradNorm:   6.423 | LR: 4.92e-05
+[Batch  2176] [Opt  272] [Ep  0.067] | Loss:  3.6083 | GradNorm:   6.380 | LR: 4.91e-05
+[Batch  2240] [Opt  280] [Ep  0.069] | Loss:  1.6293 | GradNorm:   5.949 | LR: 4.91e-05
+[Batch  2304] [Opt  288] [Ep  0.071] | Loss:  3.0729 | GradNorm:   5.946 | LR: 4.91e-05
+[Batch  2368] [Opt  296] [Ep  0.073] | Loss:  2.7808 | GradNorm:   6.213 | LR: 4.90e-05
+[Batch  2432] [Opt  304] [Ep  0.075] | Loss:  2.3236 | GradNorm:   5.714 | LR: 4.90e-05
+[Batch  2496] [Opt  312] [Ep  0.077] | Loss:  6.0140 | GradNorm:   7.385 | LR: 4.90e-05
+[Batch  2560] [Opt  320] [Ep  0.079] | Loss:  1.2821 | GradNorm:   7.172 | LR: 4.89e-05
+[Batch  2560] [EVAL] | Loss:  2.8464 | rouge2_fmeasure: 0.0167 | bleu1: 0.1466 | bleu4: 0.0217
+[Batch  2560] [SAVE] | 保存检查点到 checkpoint-2560
+[Batch  2624] [Opt  328] [Ep  0.081] | Loss:  2.2923 | GradNorm:   5.675 | LR: 4.89e-05
+[Batch  2688] [Opt  336] [Ep  0.083] | Loss:  2.2478 | GradNorm:   5.784 | LR: 4.89e-05
+[Batch  2752] [Opt  344] [Ep  0.085] | Loss:  3.9660 | GradNorm:   5.047 | LR: 4.88e-05
+[Batch  2816] [Opt  352] [Ep  0.087] | Loss:  2.2163 | GradNorm:   6.201 | LR: 4.88e-05
+[Batch  2880] [Opt  360] [Ep  0.089] | Loss:  2.5921 | GradNorm:   5.305 | LR: 4.88e-05
+[Batch  2944] [Opt  368] [Ep  0.091] | Loss:  3.5675 | GradNorm:   5.062 | LR: 4.87e-05
+[Batch  3008] [Opt  376] [Ep  0.093] | Loss:  3.1185 | GradNorm:   5.356 | LR: 4.87e-05
+[Batch  3072] [Opt  384] [Ep  0.095] | Loss:  3.3090 | GradNorm:   5.614 | LR: 4.87e-05
+[Batch  3072] [EVAL] | Loss:  2.8491 | rouge2_fmeasure: 0.0182 | bleu1: 0.1685 | bleu4: 0.0234
+[Batch  3072] [SAVE] | 保存检查点到 checkpoint-3072
+[Batch  3136] [Opt  392] [Ep  0.097] | Loss:  1.4777 | GradNorm:   5.251 | LR: 4.86e-05
+[Batch  3200] [Opt  400] [Ep  0.099] | Loss:  3.0147 | GradNorm:   5.138 | LR: 4.86e-05
+[Batch  3264] [Opt  408] [Ep  0.101] | Loss:  1.8180 | GradNorm:   5.302 | LR: 4.86e-05
+[Batch  3328] [Opt  416] [Ep  0.103] | Loss:  2.4955 | GradNorm:   6.064 | LR: 4.85e-05
+[Batch  3392] [Opt  424] [Ep  0.105] | Loss:  2.6613 | GradNorm:   4.749 | LR: 4.85e-05
+[Batch  3456] [Opt  432] [Ep  0.107] | Loss:  5.7585 | GradNorm:   4.954 | LR: 4.85e-05
+[Batch  3520] [Opt  440] [Ep  0.109] | Loss:  2.6733 | GradNorm:   5.003 | LR: 4.84e-05
+[Batch  3584] [Opt  448] [Ep  0.111] | Loss:  1.6944 | GradNorm:   5.425 | LR: 4.84e-05
+[Batch  3584] [EVAL] | Loss:  2.7865 | rouge2_fmeasure: 0.0000 | bleu1: 0.0791 | bleu4: 0.0121
+[Batch  3584] [SAVE] | 保存检查点到 checkpoint-3584
+[Batch  3648] [Opt  456] [Ep  0.113] | Loss:  1.6803 | GradNorm:   4.894 | LR: 4.84e-05
+[Batch  3712] [Opt  464] [Ep  0.115] | Loss:  2.5438 | GradNorm:   5.287 | LR: 4.83e-05
+[Batch  3776] [Opt  472] [Ep  0.117] | Loss:  2.6453 | GradNorm:   4.834 | LR: 4.83e-05
+[Batch  3840] [Opt  480] [Ep  0.119] | Loss:  3.2791 | GradNorm:   6.426 | LR: 4.83e-05
+[Batch  3904] [Opt  488] [Ep  0.121] | Loss:  2.1379 | GradNorm:   6.339 | LR: 4.82e-05
+[Batch  3968] [Opt  496] [Ep  0.123] | Loss:  3.0688 | GradNorm:   4.759 | LR: 4.82e-05
+[Batch  4032] [Opt  504] [Ep  0.125] | Loss:  2.3609 | GradNorm:   5.013 | LR: 4.82e-05
+[Batch  4096] [Opt  512] [Ep  0.127] | Loss:  2.4762 | GradNorm:   5.572 | LR: 4.81e-05
+[Batch  4096] [EVAL] | Loss:  2.7986 | rouge2_fmeasure: 0.0350 | bleu1: 0.1813 | bleu4: 0.0296
+[Batch  4096] [SAVE] | 保存检查点到 checkpoint-4096
+[Batch  4160] [Opt  520] [Ep  0.129] | Loss:  3.5936 | GradNorm:   5.775 | LR: 4.81e-05
+[Batch  4224] [Opt  528] [Ep  0.131] | Loss:  1.7212 | GradNorm:   6.126 | LR: 4.81e-05
+[Batch  4288] [Opt  536] [Ep  0.132] | Loss:  3.9063 | GradNorm:   5.482 | LR: 4.80e-05
+[Batch  4352] [Opt  544] [Ep  0.134] | Loss:  3.3927 | GradNorm:   4.939 | LR: 4.80e-05
+[Batch  4416] [Opt  552] [Ep  0.136] | Loss:  2.4750 | GradNorm:   4.993 | LR: 4.80e-05
+[Batch  4480] [Opt  560] [Ep  0.138] | Loss:  2.5855 | GradNorm:   4.847 | LR: 4.79e-05
+[Batch  4544] [Opt  568] [Ep  0.140] | Loss:  2.5176 | GradNorm:   6.735 | LR: 4.79e-05
+[Batch  4608] [Opt  576] [Ep  0.142] | Loss:  2.6289 | GradNorm:   5.031 | LR: 4.79e-05
+[Batch  4608] [EVAL] | Loss:  2.7338 | rouge2_fmeasure: 0.0593 | bleu1: 0.2285 | bleu4: 0.0495
+[Batch  4608] [SAVE] | 保存检查点到 checkpoint-4608
+[Batch  4672] [Opt  584] [Ep  0.144] | Loss:  3.9784 | GradNorm:   5.251 | LR: 4.78e-05
+[Batch  4736] [Opt  592] [Ep  0.146] | Loss:  1.8802 | GradNorm:   5.259 | LR: 4.78e-05
+[Batch  4800] [Opt  600] [Ep  0.148] | Loss:  2.6895 | GradNorm:   4.982 | LR: 4.78e-05
+[Batch  4864] [Opt  608] [Ep  0.150] | Loss:  2.8996 | GradNorm:   5.162 | LR: 4.77e-05
+[Batch  4928] [Opt  616] [Ep  0.152] | Loss:  2.1945 | GradNorm:   4.705 | LR: 4.77e-05
+[Batch  4992] [Opt  624] [Ep  0.154] | Loss:  2.9392 | GradNorm:   5.326 | LR: 4.77e-05
+[Batch  5056] [Opt  632] [Ep  0.156] | Loss:  3.6583 | GradNorm:   6.434 | LR: 4.76e-05
+[Batch  5120] [Opt  640] [Ep  0.158] | Loss:  1.5295 | GradNorm:   7.329 | LR: 4.76e-05
+[Batch  5120] [EVAL] | Loss:  2.6898 | rouge2_fmeasure: 0.0216 | bleu1: 0.1643 | bleu4: 0.0260
+[Batch  5120] [SAVE] | 保存检查点到 checkpoint-5120
+[Batch  5184] [Opt  648] [Ep  0.160] | Loss:  3.7235 | GradNorm:   5.232 | LR: 4.76e-05
+[Batch  5248] [Opt  656] [Ep  0.162] | Loss:  3.4487 | GradNorm:   5.496 | LR: 4.75e-05
+[Batch  5312] [Opt  664] [Ep  0.164] | Loss:  2.6899 | GradNorm:   5.638 | LR: 4.75e-05
+[Batch  5376] [Opt  672] [Ep  0.166] | Loss:  3.7251 | GradNorm:   5.479 | LR: 4.75e-05
+[Batch  5440] [Opt  680] [Ep  0.168] | Loss:  1.6045 | GradNorm:   4.463 | LR: 4.74e-05
+[Batch  5504] [Opt  688] [Ep  0.170] | Loss:  3.8438 | GradNorm:   4.773 | LR: 4.74e-05
+[Batch  5568] [Opt  696] [Ep  0.172] | Loss:  3.0658 | GradNorm:   4.312 | LR: 4.74e-05
+[Batch  5632] [Opt  704] [Ep  0.174] | Loss:  2.7411 | GradNorm:   4.480 | LR: 4.73e-05
+[Batch  5632] [EVAL] | Loss:  2.7010 | rouge2_fmeasure: 0.0201 | bleu1: 0.1067 | bleu4: 0.0165
+[Batch  5632] [SAVE] | 保存检查点到 checkpoint-5632
+[Batch  5696] [Opt  712] [Ep  0.176] | Loss:  2.3495 | GradNorm:   4.722 | LR: 4.73e-05
+[Batch  5760] [Opt  720] [Ep  0.178] | Loss:  2.7302 | GradNorm:   4.912 | LR: 4.73e-05
+[Batch  5824] [Opt  728] [Ep  0.180] | Loss:  2.6738 | GradNorm:   4.730 | LR: 4.73e-05
+[Batch  5888] [Opt  736] [Ep  0.182] | Loss:  2.2742 | GradNorm:   5.555 | LR: 4.72e-05
+[Batch  5952] [Opt  744] [Ep  0.184] | Loss:  3.8997 | GradNorm:   5.300 | LR: 4.72e-05
+[Batch  6016] [Opt  752] [Ep  0.186] | Loss:  2.1987 | GradNorm:   4.911 | LR: 4.72e-05
+[Batch  6080] [Opt  760] [Ep  0.188] | Loss:  1.8214 | GradNorm:   4.621 | LR: 4.71e-05
+[Batch  6144] [Opt  768] [Ep  0.190] | Loss:  4.0238 | GradNorm:   4.315 | LR: 4.71e-05
+[Batch  6144] [EVAL] | Loss:  2.6935 | rouge2_fmeasure: 0.0190 | bleu1: 0.1468 | bleu4: 0.0232
+[Batch  6144] [SAVE] | 保存检查点到 checkpoint-6144
+[Batch  6208] [Opt  776] [Ep  0.192] | Loss:  2.6299 | GradNorm:   4.533 | LR: 4.71e-05
+[Batch  6272] [Opt  784] [Ep  0.194] | Loss:  1.8726 | GradNorm:   4.114 | LR: 4.70e-05
+[Batch  6336] [Opt  792] [Ep  0.196] | Loss:  1.5730 | GradNorm:   4.771 | LR: 4.70e-05
+[Batch  6400] [Opt  800] [Ep  0.198] | Loss:  2.4935 | GradNorm:   4.756 | LR: 4.70e-05
+[Batch  6464] [Opt  808] [Ep  0.200] | Loss:  5.7847 | GradNorm:   6.165 | LR: 4.69e-05
+[Batch  6528] [Opt  816] [Ep  0.202] | Loss:  2.6755 | GradNorm:   4.617 | LR: 4.69e-05
+[Batch  6592] [Opt  824] [Ep  0.204] | Loss:  2.0103 | GradNorm:   4.442 | LR: 4.69e-05
+[Batch  6656] [Opt  832] [Ep  0.206] | Loss:  2.3666 | GradNorm:   4.681 | LR: 4.68e-05
+[Batch  6656] [EVAL] | Loss:  2.7152 | rouge2_fmeasure: 0.0000 | bleu1: 0.0693 | bleu4: 0.0109
+[Batch  6656] [SAVE] | 保存检查点到 checkpoint-6656
+[Batch  6720] [Opt  840] [Ep  0.208] | Loss:  3.1877 | GradNorm:   4.130 | LR: 4.68e-05
+[Batch  6784] [Opt  848] [Ep  0.210] | Loss:  2.4510 | GradNorm:   4.934 | LR: 4.68e-05
+[Batch  6848] [Opt  856] [Ep  0.212] | Loss:  2.9523 | GradNorm:   4.563 | LR: 4.67e-05
+[Batch  6912] [Opt  864] [Ep  0.214] | Loss:  1.5414 | GradNorm:   8.124 | LR: 4.67e-05
+[Batch  6976] [Opt  872] [Ep  0.216] | Loss:  2.5103 | GradNorm:   5.125 | LR: 4.67e-05
+[Batch  7040] [Opt  880] [Ep  0.218] | Loss:  3.3037 | GradNorm:   4.006 | LR: 4.66e-05
+[Batch  7104] [Opt  888] [Ep  0.220] | Loss:  2.9302 | GradNorm:   5.026 | LR: 4.66e-05
+[Batch  7168] [Opt  896] [Ep  0.221] | Loss:  2.4181 | GradNorm:   4.873 | LR: 4.66e-05
+[Batch  7168] [EVAL] | Loss:  2.6874 | rouge2_fmeasure: 0.0353 | bleu1: 0.2029 | bleu4: 0.0306
+[Batch  7168] [SAVE] | 保存检查点到 checkpoint-7168
+[Batch  7232] [Opt  904] [Ep  0.223] | Loss:  3.3058 | GradNorm:   4.676 | LR: 4.65e-05
+[Batch  7296] [Opt  912] [Ep  0.225] | Loss:  3.9730 | GradNorm:   4.302 | LR: 4.65e-05
+[Batch  7360] [Opt  920] [Ep  0.227] | Loss:  2.7039 | GradNorm:   4.065 | LR: 4.65e-05
+[Batch  7424] [Opt  928] [Ep  0.229] | Loss:  2.2029 | GradNorm:   4.280 | LR: 4.64e-05
+[Batch  7488] [Opt  936] [Ep  0.231] | Loss:  3.3692 | GradNorm:   4.594 | LR: 4.64e-05
+[Batch  7552] [Opt  944] [Ep  0.233] | Loss:  2.9673 | GradNorm:   5.167 | LR: 4.64e-05
+[Batch  7616] [Opt  952] [Ep  0.235] | Loss:  4.3501 | GradNorm:   4.892 | LR: 4.63e-05
+[Batch  7680] [Opt  960] [Ep  0.237] | Loss:  1.8217 | GradNorm:   4.286 | LR: 4.63e-05
+[Batch  7680] [EVAL] | Loss:  2.6758 | rouge2_fmeasure: 0.0411 | bleu1: 0.1873 | bleu4: 0.0315
+[Batch  7680] [SAVE] | 保存检查点到 checkpoint-7680
+[Batch  7744] [Opt  968] [Ep  0.239] | Loss:  3.4022 | GradNorm:   3.710 | LR: 4.63e-05
+[Batch  7808] [Opt  976] [Ep  0.241] | Loss:  2.0403 | GradNorm:   4.784 | LR: 4.62e-05
+[Batch  7872] [Opt  984] [Ep  0.243] | Loss:  3.4729 | GradNorm:   4.215 | LR: 4.62e-05
+[Batch  7936] [Opt  992] [Ep  0.245] | Loss:  2.4366 | GradNorm:   4.333 | LR: 4.62e-05
+[Batch  8000] [Opt 1000] [Ep  0.247] | Loss:  3.2852 | GradNorm:   4.640 | LR: 4.61e-05
+[Batch  8064] [Opt 1008] [Ep  0.249] | Loss:  2.7392 | GradNorm:   4.275 | LR: 4.61e-05
+[Batch  8128] [Opt 1016] [Ep  0.251] | Loss:  3.1169 | GradNorm:   6.077 | LR: 4.61e-05
+[Batch  8192] [Opt 1024] [Ep  0.253] | Loss:  2.7232 | GradNorm:   5.200 | LR: 4.60e-05
+[Batch  8192] [EVAL] | Loss:  2.6415 | rouge2_fmeasure: 0.0259 | bleu1: 0.1343 | bleu4: 0.0245
+[Batch  8192] [SAVE] | 保存检查点到 checkpoint-8192
+[Batch  8256] [Opt 1032] [Ep  0.255] | Loss:  1.3002 | GradNorm:   5.208 | LR: 4.60e-05
+[Batch  8320] [Opt 1040] [Ep  0.257] | Loss:  2.1339 | GradNorm:   4.905 | LR: 4.60e-05
+[Batch  8384] [Opt 1048] [Ep  0.259] | Loss:  3.2556 | GradNorm:   5.380 | LR: 4.59e-05
+[Batch  8448] [Opt 1056] [Ep  0.261] | Loss:  2.4485 | GradNorm:   4.438 | LR: 4.59e-05
+[Batch  8512] [Opt 1064] [Ep  0.263] | Loss:  2.9684 | GradNorm:   4.980 | LR: 4.59e-05
+[Batch  8576] [Opt 1072] [Ep  0.265] | Loss:  1.8387 | GradNorm:   5.104 | LR: 4.58e-05
+[Batch  8640] [Opt 1080] [Ep  0.267] | Loss:  1.9565 | GradNorm:   4.400 | LR: 4.58e-05
+[Batch  8704] [Opt 1088] [Ep  0.269] | Loss:  2.8516 | GradNorm:   4.219 | LR: 4.58e-05
+[Batch  8704] [EVAL] | Loss:  2.6673 | rouge2_fmeasure: 0.0374 | bleu1: 0.1578 | bleu4: 0.0358
+[Batch  8704] [SAVE] | 保存检查点到 checkpoint-8704
+[Batch  8768] [Opt 1096] [Ep  0.271] | Loss:  2.4582 | GradNorm:   5.871 | LR: 4.57e-05
+[Batch  8832] [Opt 1104] [Ep  0.273] | Loss:  2.0637 | GradNorm:   4.208 | LR: 4.57e-05
+[Batch  8896] [Opt 1112] [Ep  0.275] | Loss:  2.4004 | GradNorm:   4.342 | LR: 4.57e-05
+[Batch  8960] [Opt 1120] [Ep  0.277] | Loss:  2.6832 | GradNorm:   5.007 | LR: 4.56e-05
+[Batch  9024] [Opt 1128] [Ep  0.279] | Loss:  1.8797 | GradNorm:   4.413 | LR: 4.56e-05
+[Batch  9088] [Opt 1136] [Ep  0.281] | Loss:  2.9946 | GradNorm:   4.912 | LR: 4.56e-05
+[Batch  9152] [Opt 1144] [Ep  0.283] | Loss:  1.9322 | GradNorm:   4.586 | LR: 4.55e-05
+[Batch  9216] [Opt 1152] [Ep  0.285] | Loss:  3.2262 | GradNorm:   5.513 | LR: 4.55e-05
+[Batch  9216] [EVAL] | Loss:  2.6568 | rouge2_fmeasure: 0.0074 | bleu1: 0.1339 | bleu4: 0.0166
+[Batch  9216] [SAVE] | 保存检查点到 checkpoint-9216
+[Batch  9280] [Opt 1160] [Ep  0.287] | Loss:  1.7631 | GradNorm:   4.433 | LR: 4.55e-05
+[Batch  9344] [Opt 1168] [Ep  0.289] | Loss:  3.0491 | GradNorm:   5.634 | LR: 4.54e-05
+[Batch  9408] [Opt 1176] [Ep  0.291] | Loss:  1.5669 | GradNorm:   4.224 | LR: 4.54e-05
+[Batch  9472] [Opt 1184] [Ep  0.293] | Loss:  3.1729 | GradNorm:   4.524 | LR: 4.54e-05
+[Batch  9536] [Opt 1192] [Ep  0.295] | Loss:  3.2593 | GradNorm:   5.070 | LR: 4.53e-05
+[Batch  9600] [Opt 1200] [Ep  0.297] | Loss:  2.1624 | GradNorm:   4.639 | LR: 4.53e-05
+[Batch  9664] [Opt 1208] [Ep  0.299] | Loss:  1.9944 | GradNorm:   5.153 | LR: 4.53e-05
+[Batch  9728] [Opt 1216] [Ep  0.301] | Loss:  1.6241 | GradNorm:   5.194 | LR: 4.52e-05
+[Batch  9728] [EVAL] | Loss:  2.5712 | rouge2_fmeasure: 0.0300 | bleu1: 0.1516 | bleu4: 0.0285
+[Batch  9728] [SAVE] | 保存检查点到 checkpoint-9728
+[Batch  9792] [Opt 1224] [Ep  0.303] | Loss:  2.8953 | GradNorm:   4.039 | LR: 4.52e-05
+[Batch  9856] [Opt 1232] [Ep  0.305] | Loss:  3.1192 | GradNorm:   4.712 | LR: 4.52e-05
+[Batch  9920] [Opt 1240] [Ep  0.307] | Loss:  2.3721 | GradNorm:   4.831 | LR: 4.51e-05
+[Batch  9984] [Opt 1248] [Ep  0.308] | Loss:  3.7860 | GradNorm:   4.681 | LR: 4.51e-05
+[Batch 10048] [Opt 1256] [Ep  0.310] | Loss:  3.0586 | GradNorm:   4.388 | LR: 4.51e-05
+[Batch 10112] [Opt 1264] [Ep  0.312] | Loss:  2.3356 | GradNorm:   4.329 | LR: 4.50e-05
+[Batch 10176] [Opt 1272] [Ep  0.314] | Loss:  2.7283 | GradNorm:   4.575 | LR: 4.50e-05
+[Batch 10240] [Opt 1280] [Ep  0.316] | Loss:  1.7198 | GradNorm:   4.658 | LR: 4.50e-05
+[Batch 10240] [EVAL] | Loss:  2.5674 | rouge2_fmeasure: 0.0582 | bleu1: 0.2057 | bleu4: 0.0408
+[Batch 10240] [SAVE] | 保存检查点到 checkpoint-10240
+[Batch 10304] [Opt 1288] [Ep  0.318] | Loss:  1.2692 | GradNorm:   4.714 | LR: 4.49e-05
+[Batch 10368] [Opt 1296] [Ep  0.320] | Loss:  2.5341 | GradNorm:   4.373 | LR: 4.49e-05
+[Batch 10432] [Opt 1304] [Ep  0.322] | Loss:  2.6166 | GradNorm:   3.828 | LR: 4.49e-05
+[Batch 10496] [Opt 1312] [Ep  0.324] | Loss:  3.4296 | GradNorm:   6.361 | LR: 4.48e-05
+[Batch 10560] [Opt 1320] [Ep  0.326] | Loss:  2.2050 | GradNorm:   3.518 | LR: 4.48e-05
+[Batch 10624] [Opt 1328] [Ep  0.328] | Loss:  2.3880 | GradNorm:   3.705 | LR: 4.48e-05
+[Batch 10688] [Opt 1336] [Ep  0.330] | Loss:  3.2037 | GradNorm:   4.271 | LR: 4.47e-05
+[Batch 10752] [Opt 1344] [Ep  0.332] | Loss:  2.6208 | GradNorm:   4.826 | LR: 4.47e-05
+[Batch 10752] [EVAL] | Loss:  2.6118 | rouge2_fmeasure: 0.0367 | bleu1: 0.1708 | bleu4: 0.0326
+[Batch 10752] [SAVE] | 保存检查点到 checkpoint-10752
+[Batch 10816] [Opt 1352] [Ep  0.334] | Loss:  3.5717 | GradNorm:   4.397 | LR: 4.47e-05
+[Batch 10880] [Opt 1360] [Ep  0.336] | Loss:  1.9980 | GradNorm:   3.891 | LR: 4.46e-05
+[Batch 10944] [Opt 1368] [Ep  0.338] | Loss:  4.1628 | GradNorm:   4.125 | LR: 4.46e-05
+[Batch 11008] [Opt 1376] [Ep  0.340] | Loss:  1.7994 | GradNorm:   4.667 | LR: 4.46e-05
+[Batch 11072] [Opt 1384] [Ep  0.342] | Loss:  3.7120 | GradNorm:   4.722 | LR: 4.45e-05
+[Batch 11136] [Opt 1392] [Ep  0.344] | Loss:  2.6356 | GradNorm:   4.691 | LR: 4.45e-05
+[Batch 11200] [Opt 1400] [Ep  0.346] | Loss:  2.7743 | GradNorm:   4.495 | LR: 4.45e-05
+[Batch 11264] [Opt 1408] [Ep  0.348] | Loss:  2.2036 | GradNorm:   4.082 | LR: 4.44e-05
+[Batch 11264] [EVAL] | Loss:  2.5872 | rouge2_fmeasure: 0.0190 | bleu1: 0.1073 | bleu4: 0.0174
+[Batch 11264] [SAVE] | 保存检查点到 checkpoint-11264
+[Batch 11328] [Opt 1416] [Ep  0.350] | Loss:  3.6284 | GradNorm:   6.664 | LR: 4.44e-05
+[Batch 11392] [Opt 1424] [Ep  0.352] | Loss:  4.1378 | GradNorm:   4.855 | LR: 4.44e-05
+[Batch 11456] [Opt 1432] [Ep  0.354] | Loss:  1.9033 | GradNorm:   4.825 | LR: 4.43e-05
+[Batch 11520] [Opt 1440] [Ep  0.356] | Loss:  2.3700 | GradNorm:   4.209 | LR: 4.43e-05
+[Batch 11584] [Opt 1448] [Ep  0.358] | Loss:  3.5425 | GradNorm:   4.348 | LR: 4.43e-05
+[Batch 11648] [Opt 1456] [Ep  0.360] | Loss:  1.6058 | GradNorm:   4.213 | LR: 4.42e-05
+[Batch 11712] [Opt 1464] [Ep  0.362] | Loss:  3.3863 | GradNorm:   4.605 | LR: 4.42e-05
+[Batch 11776] [Opt 1472] [Ep  0.364] | Loss:  2.8647 | GradNorm:   3.933 | LR: 4.42e-05
+[Batch 11776] [EVAL] | Loss:  2.5650 | rouge2_fmeasure: 0.0270 | bleu1: 0.1739 | bleu4: 0.0260
+[Batch 11776] [SAVE] | 保存检查点到 checkpoint-11776
+[Batch 11840] [Opt 1480] [Ep  0.366] | Loss:  1.9010 | GradNorm:   4.052 | LR: 4.41e-05
+[Batch 11904] [Opt 1488] [Ep  0.368] | Loss:  3.2122 | GradNorm:   4.638 | LR: 4.41e-05
+[Batch 11968] [Opt 1496] [Ep  0.370] | Loss:  2.0108 | GradNorm:   4.721 | LR: 4.41e-05
+[Batch 12032] [Opt 1504] [Ep  0.372] | Loss:  1.8801 | GradNorm:   3.843 | LR: 4.40e-05
+[Batch 12096] [Opt 1512] [Ep  0.374] | Loss:  3.1965 | GradNorm:   4.737 | LR: 4.40e-05
+[Batch 12160] [Opt 1520] [Ep  0.376] | Loss:  3.5902 | GradNorm:   4.348 | LR: 4.40e-05
+[Batch 12224] [Opt 1528] [Ep  0.378] | Loss:  1.5884 | GradNorm:   4.029 | LR: 4.39e-05
+[Batch 12288] [Opt 1536] [Ep  0.380] | Loss:  3.4087 | GradNorm:   4.158 | LR: 4.39e-05
+[Batch 12288] [EVAL] | Loss:  2.5291 | rouge2_fmeasure: 0.0180 | bleu1: 0.1630 | bleu4: 0.0195
+[Batch 12288] [SAVE] | 保存检查点到 checkpoint-12288
+[Batch 12352] [Opt 1544] [Ep  0.382] | Loss:  2.0635 | GradNorm:   5.771 | LR: 4.39e-05
+[Batch 12416] [Opt 1552] [Ep  0.384] | Loss:  1.3219 | GradNorm:   4.587 | LR: 4.38e-05
+[Batch 12480] [Opt 1560] [Ep  0.386] | Loss:  2.8100 | GradNorm:   4.393 | LR: 4.38e-05
+[Batch 12544] [Opt 1568] [Ep  0.388] | Loss:  2.0271 | GradNorm:   5.948 | LR: 4.38e-05
+[Batch 12608] [Opt 1576] [Ep  0.390] | Loss:  3.6099 | GradNorm:   4.014 | LR: 4.37e-05
+[Batch 12672] [Opt 1584] [Ep  0.392] | Loss:  3.8101 | GradNorm:   4.663 | LR: 4.37e-05
+[Batch 12736] [Opt 1592] [Ep  0.394] | Loss:  4.5475 | GradNorm:   4.847 | LR: 4.37e-05
+[Batch 12800] [Opt 1600] [Ep  0.396] | Loss:  2.4468 | GradNorm:   4.237 | LR: 4.36e-05
+[Batch 12800] [EVAL] | Loss:  2.5260 | rouge2_fmeasure: 0.0100 | bleu1: 0.1755 | bleu4: 0.0200
+[Batch 12800] [SAVE] | 保存检查点到 checkpoint-12800
+[Batch 12864] [Opt 1608] [Ep  0.397] | Loss:  4.1489 | GradNorm:   5.015 | LR: 4.36e-05
+[Batch 12928] [Opt 1616] [Ep  0.399] | Loss:  1.6548 | GradNorm:   4.129 | LR: 4.36e-05
+[Batch 12992] [Opt 1624] [Ep  0.401] | Loss:  2.5288 | GradNorm:   9.566 | LR: 4.35e-05
+[Batch 13056] [Opt 1632] [Ep  0.403] | Loss:  1.9420 | GradNorm:   5.731 | LR: 4.35e-05
+[Batch 13120] [Opt 1640] [Ep  0.405] | Loss:  1.6934 | GradNorm:   5.083 | LR: 4.35e-05
+[Batch 13184] [Opt 1648] [Ep  0.407] | Loss:  2.2115 | GradNorm:   5.995 | LR: 4.34e-05
+[Batch 13248] [Opt 1656] [Ep  0.409] | Loss:  2.7856 | GradNorm:   4.381 | LR: 4.34e-05
+[Batch 13312] [Opt 1664] [Ep  0.411] | Loss:  4.8840 | GradNorm:   5.826 | LR: 4.34e-05
+[Batch 13312] [EVAL] | Loss:  2.5311 | rouge2_fmeasure: 0.0273 | bleu1: 0.1481 | bleu4: 0.0266
+[Batch 13312] [SAVE] | 保存检查点到 checkpoint-13312
+[Batch 13376] [Opt 1672] [Ep  0.413] | Loss:  3.0171 | GradNorm:   4.171 | LR: 4.33e-05
+[Batch 13440] [Opt 1680] [Ep  0.415] | Loss:  2.6611 | GradNorm:   4.112 | LR: 4.33e-05
+[Batch 13504] [Opt 1688] [Ep  0.417] | Loss:  1.3115 | GradNorm:   5.118 | LR: 4.33e-05
+[Batch 13568] [Opt 1696] [Ep  0.419] | Loss:  3.7969 | GradNorm:   4.897 | LR: 4.32e-05
+[Batch 13632] [Opt 1704] [Ep  0.421] | Loss:  3.0252 | GradNorm:   5.416 | LR: 4.32e-05
+[Batch 13696] [Opt 1712] [Ep  0.423] | Loss:  2.3881 | GradNorm:   3.890 | LR: 4.32e-05
+[Batch 13760] [Opt 1720] [Ep  0.425] | Loss:  3.7114 | GradNorm:   5.259 | LR: 4.31e-05
+[Batch 13824] [Opt 1728] [Ep  0.427] | Loss:  1.1641 | GradNorm:   4.442 | LR: 4.31e-05
+[Batch 13824] [EVAL] | Loss:  2.5856 | rouge2_fmeasure: 0.0000 | bleu1: 0.0186 | bleu4: 0.0046
+[Batch 13824] [SAVE] | 保存检查点到 checkpoint-13824
+[Batch 13888] [Opt 1736] [Ep  0.429] | Loss:  2.3064 | GradNorm:   5.116 | LR: 4.31e-05
+[Batch 13952] [Opt 1744] [Ep  0.431] | Loss:  3.7702 | GradNorm:   4.839 | LR: 4.30e-05
+[Batch 14016] [Opt 1752] [Ep  0.433] | Loss:  3.0639 | GradNorm:   3.796 | LR: 4.30e-05
+[Batch 14080] [Opt 1760] [Ep  0.435] | Loss:  2.8870 | GradNorm:   4.215 | LR: 4.30e-05
+[Batch 14144] [Opt 1768] [Ep  0.437] | Loss:  3.4097 | GradNorm:   5.297 | LR: 4.29e-05
+[Batch 14208] [Opt 1776] [Ep  0.439] | Loss:  1.9737 | GradNorm:   3.749 | LR: 4.29e-05
+[Batch 14272] [Opt 1784] [Ep  0.441] | Loss:  1.7840 | GradNorm:   4.417 | LR: 4.29e-05
+[Batch 14336] [Opt 1792] [Ep  0.443] | Loss:  4.2952 | GradNorm:   4.028 | LR: 4.28e-05
+[Batch 14336] [EVAL] | Loss:  2.5663 | rouge2_fmeasure: 0.0000 | bleu1: 0.0235 | bleu4: 0.0036
+[Batch 14336] [SAVE] | 保存检查点到 checkpoint-14336
+[Batch 14400] [Opt 1800] [Ep  0.445] | Loss:  2.4594 | GradNorm:   4.390 | LR: 4.28e-05
+[Batch 14464] [Opt 1808] [Ep  0.447] | Loss:  2.6104 | GradNorm:   4.293 | LR: 4.28e-05
+[Batch 14528] [Opt 1816] [Ep  0.449] | Loss:  4.1094 | GradNorm:   4.516 | LR: 4.27e-05
+[Batch 14592] [Opt 1824] [Ep  0.451] | Loss:  1.6614 | GradNorm:   4.712 | LR: 4.27e-05
+[Batch 14656] [Opt 1832] [Ep  0.453] | Loss:  3.3090 | GradNorm:   4.710 | LR: 4.27e-05
+[Batch 14720] [Opt 1840] [Ep  0.455] | Loss:  3.6743 | GradNorm:   4.408 | LR: 4.26e-05
+[Batch 14784] [Opt 1848] [Ep  0.457] | Loss:  1.8477 | GradNorm:   3.933 | LR: 4.26e-05
+[Batch 14848] [Opt 1856] [Ep  0.459] | Loss:  3.9122 | GradNorm:   4.541 | LR: 4.26e-05
+[Batch 14848] [EVAL] | Loss:  2.5757 | rouge2_fmeasure: 0.0000 | bleu1: 0.0180 | bleu4: 0.0033
+[Batch 14848] [SAVE] | 保存检查点到 checkpoint-14848
+[Batch 14912] [Opt 1864] [Ep  0.461] | Loss:  3.6283 | GradNorm:   3.691 | LR: 4.25e-05
+[Batch 14976] [Opt 1872] [Ep  0.463] | Loss:  3.7564 | GradNorm:   4.389 | LR: 4.25e-05
+[Batch 15040] [Opt 1880] [Ep  0.465] | Loss:  2.8594 | GradNorm:   4.627 | LR: 4.25e-05
+[Batch 15104] [Opt 1888] [Ep  0.467] | Loss:  2.5853 | GradNorm:   3.665 | LR: 4.24e-05
+[Batch 15168] [Opt 1896] [Ep  0.469] | Loss:  1.8789 | GradNorm:   4.051 | LR: 4.24e-05
+[Batch 15232] [Opt 1904] [Ep  0.471] | Loss:  3.1199 | GradNorm:   4.522 | LR: 4.24e-05
+[Batch 15296] [Opt 1912] [Ep  0.473] | Loss:  2.6428 | GradNorm:   4.369 | LR: 4.23e-05
+[Batch 15360] [Opt 1920] [Ep  0.475] | Loss:  3.4307 | GradNorm:   4.127 | LR: 4.23e-05
+[Batch 15360] [EVAL] | Loss:  2.5875 | rouge2_fmeasure: 0.0062 | bleu1: 0.0751 | bleu4: 0.0111
+[Batch 15360] [SAVE] | 保存检查点到 checkpoint-15360
+[Batch 15424] [Opt 1928] [Ep  0.477] | Loss:  3.5608 | GradNorm:   4.775 | LR: 4.23e-05
+[Batch 15488] [Opt 1936] [Ep  0.479] | Loss:  1.7435 | GradNorm:   4.987 | LR: 4.22e-05
+[Batch 15552] [Opt 1944] [Ep  0.481] | Loss:  1.9321 | GradNorm:   3.816 | LR: 4.22e-05
+[Batch 15616] [Opt 1952] [Ep  0.483] | Loss:  2.7110 | GradNorm:   4.084 | LR: 4.22e-05
+[Batch 15680] [Opt 1960] [Ep  0.484] | Loss:  3.0625 | GradNorm:   3.416 | LR: 4.21e-05
+[Batch 15744] [Opt 1968] [Ep  0.486] | Loss:  2.6145 | GradNorm:   4.522 | LR: 4.21e-05
+[Batch 15808] [Opt 1976] [Ep  0.488] | Loss:  2.3256 | GradNorm:   4.293 | LR: 4.21e-05
+[Batch 15872] [Opt 1984] [Ep  0.490] | Loss:  2.7153 | GradNorm:   4.357 | LR: 4.20e-05
+[Batch 15872] [EVAL] | Loss:  2.6272 | rouge2_fmeasure: 0.0062 | bleu1: 0.0655 | bleu4: 0.0091
+[Batch 15872] [SAVE] | 保存检查点到 checkpoint-15872
+[Batch 15936] [Opt 1992] [Ep  0.492] | Loss:  1.5533 | GradNorm:   3.722 | LR: 4.20e-05
+[Batch 16000] [Opt 2000] [Ep  0.494] | Loss:  1.7894 | GradNorm:   5.042 | LR: 4.20e-05
+[Batch 16064] [Opt 2008] [Ep  0.496] | Loss:  3.7122 | GradNorm:   4.354 | LR: 4.19e-05
+[Batch 16128] [Opt 2016] [Ep  0.498] | Loss:  2.0721 | GradNorm:   4.126 | LR: 4.19e-05
+[Batch 16192] [Opt 2024] [Ep  0.500] | Loss:  2.1080 | GradNorm:   4.383 | LR: 4.19e-05
+[Batch 16256] [Opt 2032] [Ep  0.502] | Loss:  2.6128 | GradNorm:   4.173 | LR: 4.18e-05
+[Batch 16320] [Opt 2040] [Ep  0.504] | Loss:  3.1039 | GradNorm:   4.590 | LR: 4.18e-05
+[Batch 16384] [Opt 2048] [Ep  0.506] | Loss:  2.7094 | GradNorm:   3.990 | LR: 4.18e-05
+[Batch 16384] [EVAL] | Loss:  2.6228 | rouge2_fmeasure: 0.0069 | bleu1: 0.0349 | bleu4: 0.0064
+[Batch 16384] [SAVE] | 保存检查点到 checkpoint-16384
+[Batch 16448] [Opt 2056] [Ep  0.508] | Loss:  2.1195 | GradNorm:   5.370 | LR: 4.18e-05
+[Batch 16512] [Opt 2064] [Ep  0.510] | Loss:  3.6883 | GradNorm:   4.072 | LR: 4.17e-05
+[Batch 16576] [Opt 2072] [Ep  0.512] | Loss:  1.8569 | GradNorm:   3.336 | LR: 4.17e-05
+[Batch 16640] [Opt 2080] [Ep  0.514] | Loss:  2.9802 | GradNorm:   3.968 | LR: 4.17e-05
+[Batch 16704] [Opt 2088] [Ep  0.516] | Loss:  2.5961 | GradNorm:   4.864 | LR: 4.16e-05
+[Batch 16768] [Opt 2096] [Ep  0.518] | Loss:  2.7983 | GradNorm:   4.049 | LR: 4.16e-05
+[Batch 16832] [Opt 2104] [Ep  0.520] | Loss:  3.1857 | GradNorm:   4.804 | LR: 4.16e-05
+[Batch 16896] [Opt 2112] [Ep  0.522] | Loss:  2.7386 | GradNorm:   5.080 | LR: 4.15e-05
+[Batch 16896] [EVAL] | Loss:  2.5351 | rouge2_fmeasure: 0.0000 | bleu1: 0.0246 | bleu4: 0.0036
+[Batch 16896] [SAVE] | 保存检查点到 checkpoint-16896
+[Batch 16960] [Opt 2120] [Ep  0.524] | Loss:  2.6725 | GradNorm:   4.226 | LR: 4.15e-05
+[Batch 17024] [Opt 2128] [Ep  0.526] | Loss:  3.1172 | GradNorm:   4.136 | LR: 4.15e-05
+[Batch 17088] [Opt 2136] [Ep  0.528] | Loss:  3.1845 | GradNorm:   3.962 | LR: 4.14e-05
+[Batch 17152] [Opt 2144] [Ep  0.530] | Loss:  2.6273 | GradNorm:   5.723 | LR: 4.14e-05
+[Batch 17216] [Opt 2152] [Ep  0.532] | Loss:  2.2152 | GradNorm:   4.211 | LR: 4.14e-05
+[Batch 17280] [Opt 2160] [Ep  0.534] | Loss:  2.9600 | GradNorm:   3.871 | LR: 4.13e-05
+[Batch 17344] [Opt 2168] [Ep  0.536] | Loss:  1.2930 | GradNorm:   3.523 | LR: 4.13e-05
+[Batch 17408] [Opt 2176] [Ep  0.538] | Loss:  1.4694 | GradNorm:   3.784 | LR: 4.13e-05
+[Batch 17408] [EVAL] | Loss:  2.5514 | rouge2_fmeasure: 0.0137 | bleu1: 0.0612 | bleu4: 0.0119
+[Batch 17408] [SAVE] | 保存检查点到 checkpoint-17408
+[Batch 17472] [Opt 2184] [Ep  0.540] | Loss:  2.5559 | GradNorm:   4.786 | LR: 4.12e-05
+[Batch 17536] [Opt 2192] [Ep  0.542] | Loss:  3.0769 | GradNorm:   5.660 | LR: 4.12e-05
+[Batch 17600] [Opt 2200] [Ep  0.544] | Loss:  2.7367 | GradNorm:   3.881 | LR: 4.12e-05
+[Batch 17664] [Opt 2208] [Ep  0.546] | Loss:  3.6155 | GradNorm:   3.759 | LR: 4.11e-05
+[Batch 17728] [Opt 2216] [Ep  0.548] | Loss:  3.3701 | GradNorm:   4.150 | LR: 4.11e-05
+[Batch 17792] [Opt 2224] [Ep  0.550] | Loss:  2.3008 | GradNorm:   4.421 | LR: 4.11e-05
+[Batch 17856] [Opt 2232] [Ep  0.552] | Loss:  2.8212 | GradNorm:   5.493 | LR: 4.10e-05
+[Batch 17920] [Opt 2240] [Ep  0.554] | Loss:  1.9283 | GradNorm:   3.836 | LR: 4.10e-05
+[Batch 17920] [EVAL] | Loss:  2.5905 | rouge2_fmeasure: 0.0000 | bleu1: 0.0150 | bleu4: 0.0037
+[Batch 17920] [SAVE] | 保存检查点到 checkpoint-17920
+[Batch 17984] [Opt 2248] [Ep  0.556] | Loss:  1.8642 | GradNorm:   3.946 | LR: 4.10e-05
+[Batch 18048] [Opt 2256] [Ep  0.558] | Loss:  4.2421 | GradNorm:   4.302 | LR: 4.09e-05
+[Batch 18112] [Opt 2264] [Ep  0.560] | Loss:  1.0833 | GradNorm:   3.743 | LR: 4.09e-05
+[Batch 18176] [Opt 2272] [Ep  0.562] | Loss:  2.8676 | GradNorm:   4.195 | LR: 4.09e-05
+[Batch 18240] [Opt 2280] [Ep  0.564] | Loss:  1.8672 | GradNorm:   4.101 | LR: 4.08e-05
+[Batch 18304] [Opt 2288] [Ep  0.566] | Loss:  4.7089 | GradNorm:   4.375 | LR: 4.08e-05
+[Batch 18368] [Opt 2296] [Ep  0.568] | Loss:  2.9731 | GradNorm:   5.524 | LR: 4.08e-05
+[Batch 18432] [Opt 2304] [Ep  0.570] | Loss:  4.2197 | GradNorm:   4.871 | LR: 4.07e-05
+[Batch 18432] [EVAL] | Loss:  2.5706 | rouge2_fmeasure: 0.0000 | bleu1: 0.0214 | bleu4: 0.0023
+[Batch 18432] [SAVE] | 保存检查点到 checkpoint-18432
+[Batch 18496] [Opt 2312] [Ep  0.571] | Loss:  2.8581 | GradNorm:   4.084 | LR: 4.07e-05
+[Batch 18560] [Opt 2320] [Ep  0.573] | Loss:  2.4360 | GradNorm:   4.252 | LR: 4.07e-05
+[Batch 18624] [Opt 2328] [Ep  0.575] | Loss:  2.8644 | GradNorm:   3.896 | LR: 4.06e-05
+[Batch 18688] [Opt 2336] [Ep  0.577] | Loss:  1.7752 | GradNorm:   4.499 | LR: 4.06e-05
+[Batch 18752] [Opt 2344] [Ep  0.579] | Loss:  2.7745 | GradNorm:   4.051 | LR: 4.06e-05
+[Batch 18816] [Opt 2352] [Ep  0.581] | Loss:  2.5404 | GradNorm:   4.478 | LR: 4.05e-05
+[Batch 18880] [Opt 2360] [Ep  0.583] | Loss:  2.6025 | GradNorm:   4.427 | LR: 4.05e-05
+[Batch 18944] [Opt 2368] [Ep  0.585] | Loss:  2.3766 | GradNorm:   4.345 | LR: 4.05e-05
+[Batch 18944] [EVAL] | Loss:  2.5770 | rouge2_fmeasure: 0.0642 | bleu1: 0.1897 | bleu4: 0.0381
+[Batch 18944] [SAVE] | 保存检查点到 checkpoint-18944
+[Batch 19008] [Opt 2376] [Ep  0.587] | Loss:  1.9602 | GradNorm:   4.679 | LR: 4.04e-05
+[Batch 19072] [Opt 2384] [Ep  0.589] | Loss:  2.9251 | GradNorm:   4.062 | LR: 4.04e-05
+[Batch 19136] [Opt 2392] [Ep  0.591] | Loss:  2.3405 | GradNorm:   4.122 | LR: 4.04e-05
+[Batch 19200] [Opt 2400] [Ep  0.593] | Loss:  1.9402 | GradNorm:   4.692 | LR: 4.03e-05
+[Batch 19264] [Opt 2408] [Ep  0.595] | Loss:  2.8101 | GradNorm:   4.799 | LR: 4.03e-05
+[Batch 19328] [Opt 2416] [Ep  0.597] | Loss:  3.1171 | GradNorm:   4.228 | LR: 4.03e-05
+[Batch 19392] [Opt 2424] [Ep  0.599] | Loss:  3.2513 | GradNorm:   4.597 | LR: 4.02e-05
+[Batch 19456] [Opt 2432] [Ep  0.601] | Loss:  1.1387 | GradNorm:   4.453 | LR: 4.02e-05
+[Batch 19456] [EVAL] | Loss:  2.6013 | rouge2_fmeasure: 0.0331 | bleu1: 0.1818 | bleu4: 0.0275
+[Batch 19456] [SAVE] | 保存检查点到 checkpoint-19456
+[Batch 19520] [Opt 2440] [Ep  0.603] | Loss:  2.6349 | GradNorm:   4.435 | LR: 4.02e-05
+[Batch 19584] [Opt 2448] [Ep  0.605] | Loss:  2.3885 | GradNorm:   4.462 | LR: 4.01e-05
+[Batch 19648] [Opt 2456] [Ep  0.607] | Loss:  2.4720 | GradNorm:   4.325 | LR: 4.01e-05
+[Batch 19712] [Opt 2464] [Ep  0.609] | Loss:  2.5900 | GradNorm:   4.532 | LR: 4.01e-05
+[Batch 19776] [Opt 2472] [Ep  0.611] | Loss:  1.6934 | GradNorm:   3.057 | LR: 4.00e-05
+[Batch 19840] [Opt 2480] [Ep  0.613] | Loss:  2.9678 | GradNorm:   4.891 | LR: 4.00e-05
+[Batch 19904] [Opt 2488] [Ep  0.615] | Loss:  2.2731 | GradNorm:   4.412 | LR: 4.00e-05
+[Batch 19968] [Opt 2496] [Ep  0.617] | Loss:  3.3049 | GradNorm:   4.983 | LR: 3.99e-05
+[Batch 19968] [EVAL] | Loss:  2.5518 | rouge2_fmeasure: 0.0358 | bleu1: 0.2185 | bleu4: 0.0294
+[Batch 19968] [SAVE] | 保存检查点到 checkpoint-19968
+[Batch 20032] [Opt 2504] [Ep  0.619] | Loss:  2.4576 | GradNorm:   5.315 | LR: 3.99e-05
+[Batch 20096] [Opt 2512] [Ep  0.621] | Loss:  2.5453 | GradNorm:   5.134 | LR: 3.99e-05
+[Batch 20160] [Opt 2520] [Ep  0.623] | Loss:  2.8589 | GradNorm:   4.101 | LR: 3.98e-05
+[Batch 20224] [Opt 2528] [Ep  0.625] | Loss:  1.9713 | GradNorm:   4.075 | LR: 3.98e-05
+[Batch 20288] [Opt 2536] [Ep  0.627] | Loss:  2.6461 | GradNorm:   4.761 | LR: 3.98e-05
+[Batch 20352] [Opt 2544] [Ep  0.629] | Loss:  1.0117 | GradNorm:   4.604 | LR: 3.97e-05
+[Batch 20416] [Opt 2552] [Ep  0.631] | Loss:  3.5670 | GradNorm:   4.474 | LR: 3.97e-05
+[Batch 20480] [Opt 2560] [Ep  0.633] | Loss:  4.0484 | GradNorm:   4.882 | LR: 3.97e-05
+[Batch 20480] [EVAL] | Loss:  2.5238 | rouge2_fmeasure: 0.0515 | bleu1: 0.1828 | bleu4: 0.0345
+[Batch 20480] [SAVE] | 保存检查点到 checkpoint-20480
+[Batch 20544] [Opt 2568] [Ep  0.635] | Loss:  4.1093 | GradNorm:   4.099 | LR: 3.96e-05
+[Batch 20608] [Opt 2576] [Ep  0.637] | Loss:  1.9083 | GradNorm:   4.083 | LR: 3.96e-05
+[Batch 20672] [Opt 2584] [Ep  0.639] | Loss:  2.3134 | GradNorm:   3.652 | LR: 3.96e-05
+[Batch 20736] [Opt 2592] [Ep  0.641] | Loss:  3.9036 | GradNorm:   4.766 | LR: 3.95e-05
+[Batch 20800] [Opt 2600] [Ep  0.643] | Loss:  4.3732 | GradNorm:   3.886 | LR: 3.95e-05
+[Batch 20864] [Opt 2608] [Ep  0.645] | Loss:  2.1187 | GradNorm:   4.174 | LR: 3.95e-05
+[Batch 20928] [Opt 2616] [Ep  0.647] | Loss:  2.5777 | GradNorm:   4.395 | LR: 3.94e-05
+[Batch 20992] [Opt 2624] [Ep  0.649] | Loss:  1.7223 | GradNorm:   4.171 | LR: 3.94e-05
+[Batch 20992] [EVAL] | Loss:  2.5403 | rouge2_fmeasure: 0.0519 | bleu1: 0.1996 | bleu4: 0.0358
+[Batch 20992] [SAVE] | 保存检查点到 checkpoint-20992
+[Batch 21056] [Opt 2632] [Ep  0.651] | Loss:  2.6254 | GradNorm:   5.010 | LR: 3.94e-05
+[Batch 21120] [Opt 2640] [Ep  0.653] | Loss:  3.8613 | GradNorm:   4.031 | LR: 3.93e-05
+[Batch 21184] [Opt 2648] [Ep  0.655] | Loss:  4.5408 | GradNorm:   4.769 | LR: 3.93e-05
+[Batch 21248] [Opt 2656] [Ep  0.657] | Loss:  3.3672 | GradNorm:   4.568 | LR: 3.93e-05
+[Batch 21312] [Opt 2664] [Ep  0.659] | Loss:  2.6012 | GradNorm:   5.564 | LR: 3.92e-05
+[Batch 21376] [Opt 2672] [Ep  0.660] | Loss:  2.4839 | GradNorm:   4.099 | LR: 3.92e-05
+[Batch 21440] [Opt 2680] [Ep  0.662] | Loss:  2.6980 | GradNorm:   4.095 | LR: 3.92e-05
+[Batch 21504] [Opt 2688] [Ep  0.664] | Loss:  1.9065 | GradNorm:   4.501 | LR: 3.91e-05
+[Batch 21504] [EVAL] | Loss:  2.5099 | rouge2_fmeasure: 0.0552 | bleu1: 0.2136 | bleu4: 0.0365
+[Batch 21504] [SAVE] | 保存检查点到 checkpoint-21504
+[Batch 21568] [Opt 2696] [Ep  0.666] | Loss:  2.8166 | GradNorm:   4.449 | LR: 3.91e-05
+[Batch 21632] [Opt 2704] [Ep  0.668] | Loss:  3.6615 | GradNorm:   5.608 | LR: 3.91e-05
+[Batch 21696] [Opt 2712] [Ep  0.670] | Loss:  2.7310 | GradNorm:   4.475 | LR: 3.90e-05
+[Batch 21760] [Opt 2720] [Ep  0.672] | Loss:  3.1245 | GradNorm:   5.386 | LR: 3.90e-05
+[Batch 21824] [Opt 2728] [Ep  0.674] | Loss:  3.8949 | GradNorm:   3.832 | LR: 3.90e-05
+[Batch 21888] [Opt 2736] [Ep  0.676] | Loss:  2.2029 | GradNorm:   4.417 | LR: 3.89e-05
+[Batch 21952] [Opt 2744] [Ep  0.678] | Loss:  2.2029 | GradNorm:   3.962 | LR: 3.89e-05
+[Batch 22016] [Opt 2752] [Ep  0.680] | Loss:  2.3335 | GradNorm:   4.353 | LR: 3.89e-05
+[Batch 22016] [EVAL] | Loss:  2.5511 | rouge2_fmeasure: 0.0567 | bleu1: 0.2096 | bleu4: 0.0356
+[Batch 22016] [SAVE] | 保存检查点到 checkpoint-22016
+[Batch 22080] [Opt 2760] [Ep  0.682] | Loss:  3.1510 | GradNorm:   5.191 | LR: 3.88e-05
+[Batch 22144] [Opt 2768] [Ep  0.684] | Loss:  1.9476 | GradNorm:   5.798 | LR: 3.88e-05
+[Batch 22208] [Opt 2776] [Ep  0.686] | Loss:  2.6077 | GradNorm:   4.875 | LR: 3.88e-05
+[Batch 22272] [Opt 2784] [Ep  0.688] | Loss:  4.5341 | GradNorm:   4.095 | LR: 3.87e-05
+[Batch 22336] [Opt 2792] [Ep  0.690] | Loss:  1.7174 | GradNorm:   6.902 | LR: 3.87e-05
+[Batch 22400] [Opt 2800] [Ep  0.692] | Loss:  1.9660 | GradNorm:   3.935 | LR: 3.87e-05
+[Batch 22464] [Opt 2808] [Ep  0.694] | Loss:  1.5497 | GradNorm:   3.953 | LR: 3.86e-05
+    trainer.train(model_already_loaded=True)
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 241, in train
+    scaler.scale(loss).backward()
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
