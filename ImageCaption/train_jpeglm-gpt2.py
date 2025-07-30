@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 1 --eval_batch_size 1 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --bf16 --max_length 2048 --image_size 96
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 1 --eval_batch_size 1 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 999999 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --bf16 --max_length 2048 --image_size 96
 
 import sys
 import os
@@ -24,7 +24,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 
 # 配置
 class config:
-    ENCODER = "/root/autodl-fs/models/jpeg-lm"
+    ENCODER = "/root/autodl-tmp/MLLM/models/jpeg-lm"
     DECODER = "gpt2"
     SEED = 42
     MAX_LEN = 18
@@ -250,8 +250,7 @@ trainer = MySeq2SeqTrainer(
 
 
 # 先开启梯度检查点
-model.gradient_checkpointing_enable()
-model.to(device)
+# model.gradient_checkpointing_enable()
 
 # LoRA配置 - 只应用到encoder
 lora_config = LoraConfig(
@@ -277,9 +276,19 @@ for name, param in model.named_parameters():
     elif "encoder" in name and "lora" not in name.lower():
         # 确保encoder的原始参数被冻结，只训练LoRA
         param.requires_grad = False
+    # 额外解冻enc_to_dec_proj
+    if name.endswith("enc_to_dec_proj.weight") or name.endswith("enc_to_dec_proj.bias"):
+        param.requires_grad = True
         
+
 print("配置完成：encoder使用LoRA，GPT2 decoder全参数训练")
 model.print_trainable_parameters()
+
+# 打印所有参数的requires_grad状态
+print("\n==== 各层参数 requires_grad 状态 ====")
+for name, param in model.named_parameters():
+    print(f"{name:80} requires_grad={param.requires_grad}")
+print("==== END ====")
 
 trainer.train()
 trainer.save_model()
