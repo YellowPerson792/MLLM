@@ -193,12 +193,15 @@ class MySeq2SeqTrainer:
         input_name = getattr(self.model, 'main_input_name', 'input_ids')
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=desc, ncols=100, leave=False):
-                pv = batch[input_name].to(self.device)
+                batch_inputs = {input_name: batch[input_name].to(self.device)}
                 lbl = batch["labels"].to(self.device)
-                out = self.model(pixel_values=pv, labels=lbl)
+                out = self.model(**batch_inputs, labels=lbl)
                 val_loss += out.loss.item()
                 if hasattr(self.model, 'generate') and gen_config is not None:
-                    encoder_outputs = self.model.get_encoder()(pixel_values=pv)
+                    if input_name == "pixel_values":
+                        encoder_outputs = self.model.get_encoder()(pixel_values=batch_inputs[input_name])
+                    else:
+                        encoder_outputs = self.model.get_encoder()(input_ids=batch_inputs[input_name])
                     preds = self.model.generate(encoder_outputs=encoder_outputs, generation_config=gen_config)
                     predictions.extend(preds.cpu().tolist())
                     references.extend(lbl.cpu().tolist())

@@ -384,7 +384,9 @@ if lengths_2000:
                 print(f"  类别 {label}: 无样本")
     
     # 统计各token长度区间的样本比例
-    if args.dataset in ['imagenet100', 'flickr8k']:
+    if args.dataset == 'flickr8k':
+        step_size = 200
+    elif args.dataset == 'imagenet100':
         step_size = 1000
     else:  # mnist、cifar10和imagenette
         step_size = 200

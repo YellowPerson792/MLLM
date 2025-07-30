@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Example for MNIST: python /root/autodl-tmp/MLLM/eval_jpeglm_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
+# Example for MNIST: python /root/autodl-tmp/MLLM/eval_jpeglm_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-mnist-size96 --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --use_sdpa --max_seq_len 1024
 # Example for CIFAR-10: python /root/autodl-tmp/MLLM/eval_jpeglm_cls.py --model_name_or_path //root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --use_sdpa --use_xformers --use_deepspeed --max_seq_len 2048
 # Example with bit flip: python /root/autodl-tmp/MLLM/eval_jpeglm_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/trained_models/jpeglm/jpeglm-cifar10 --dataset cifar10 --batch_size 2 --test_subset_size 1000 --image_size 256 --bit_flip --bit_flip_prob 0.001 --max_seq_len 2048
-# Example with JpegLM Encoder: python /root/autodl-tmp/MLLM/eval_jpeglm_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --model_type jpeglm_encoder --pooling_strategy mean --max_seq_len 1024
+# Example with JpegLM Encoder: python /root/autodl-tmp/MLLM/eval_jpeglm_enc_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --checkpoint_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --dataset mnist --batch_size 2 --test_subset_size 1000 --image_size 96 --model_type jpeglm_encoder --pooling_strategy mean --max_seq_len 1024
 
 import argparse
 import io
@@ -122,23 +122,16 @@ if __name__ == "__main__":
     if args.model_type == 'jpeglm_encoder':
         print("=== 加载 JpegLM Encoder 模型 ===")
         try:
-            # 尝试直接加载已训练的 JpegLM Encoder 模型
-            model = load_jpeglm_encoder_model(args.checkpoint_dir).to(device).eval()
-            print(f"✓ 成功从 {args.checkpoint_dir} 加载 JpegLM Encoder 模型")
-        except Exception as e:
-            print(f"⚠️ 直接加载失败，尝试从 checkpoint 和 PEFT 加载: {e}")
-            try:
-                # 如果直接加载失败，尝试创建基础模型然后加载 PEFT
-                base_model = create_jpeglm_encoder_model(
-                    model_name_or_path=args.model_name_or_path,
-                    num_labels=num_labels,
-                    pooling_strategy=args.pooling_strategy
-                )
-                model = PeftModel.from_pretrained(base_model, args.checkpoint_dir).to(device).eval()
-                print(f"✓ 成功加载 JpegLM Encoder + PEFT 模型")
-            except Exception as e2:
-                print(f"❌ PEFT 加载也失败: {e2}")
-                raise e2
+            base_model = create_jpeglm_encoder_model(
+                model_name_or_path=args.model_name_or_path,
+                num_labels=num_labels,
+                pooling_strategy=args.pooling_strategy
+            )
+            model = PeftModel.from_pretrained(base_model, args.checkpoint_dir).to(device).eval()
+            print(f"✓ 成功加载 JpegLM Encoder + PEFT 模型")
+        except Exception as e2:
+            print(f"❌ PEFT 加载失败: {e2}")
+            raise e2
     else:
         print("=== 加载标准 PEFT 模型 ===")
         config = AutoConfig.from_pretrained(args.model_name_or_path, num_labels=num_labels, use_cache=False)

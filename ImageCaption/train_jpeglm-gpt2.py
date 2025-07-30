@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --fp16 --max_length 2048 --image_size 224
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 1 --eval_batch_size 1 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to None --bf16 --max_length 2048 --image_size 96
 
 import sys
 import os
@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
 from transformers import EncoderDecoderModel, GPT2LMHeadModel, ViTFeatureExtractor, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, default_data_collator, GenerationConfig, GPT2Config
+from torch.nn.utils.rnn import pad_sequence
 from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder
 from sklearn.model_selection import train_test_split
 import datasets
@@ -76,7 +77,7 @@ csv_path = "/root/.cache/kagglehub/datasets/adityajn105/flickr8k/versions/1/capt
 img_root = "/root/.cache/kagglehub/datasets/adityajn105/flickr8k/versions/1/Images"
 df = pd.read_csv(csv_path)
 train_df, val_df = train_test_split(df, test_size=0.2, random_state=42)
-val_df = val_df.head(100)
+val_df = val_df.head(10)
 
 class JpegBytesDataset(Dataset):
     def __init__(self, df, root_dir, encoder_tokenizer, decoder_tokenizer, max_length=2000, image_size=224, bit_flip_prob=0.0):
@@ -99,15 +100,17 @@ class JpegBytesDataset(Dataset):
         img = self.transform(img)
         jpeg_str = convert_img_to_bytes(img, bit_flip_prob=self.bit_flip_prob)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
-        input_ids = input_ids[:self.max_length] + [self.encoder_tokenizer.pad_token_id] * max(0, self.max_length - len(input_ids))
+        # 截断到max_length，但不进行padding，让collate_fn来处理
+        input_ids = input_ids[:self.max_length]
         labels = self.decoder_tokenizer(
             caption,
-            padding='max_length',
+            # 移除固定padding，让collate_fn动态处理
             max_length=50,
             truncation=True
         ).input_ids
         labels = [token if token != self.decoder_tokenizer.pad_token_id else -100 for token in labels]
         return {"input_ids": torch.tensor(input_ids), "labels": torch.tensor(labels)}
+
 
 train_dataset = JpegBytesDataset(
     train_df, img_root, encoder_tokenizer, decoder_tokenizer,
@@ -121,6 +124,20 @@ val_dataset = JpegBytesDataset(
     bit_flip_prob=args.bit_flip_prob,
     max_length=args.max_length
 )
+
+# 动态padding的collate_fn
+def dynamic_pad_collate_fn(batch):
+    input_ids = [item["input_ids"] for item in batch]
+    labels = [item["labels"] for item in batch]
+    
+    # 找到本batch的最大长度
+    input_max_len = max(x.size(0) for x in input_ids)
+    label_max_len = max(x.size(0) for x in labels)
+    # pad到本batch最大长度
+    input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=encoder_tokenizer.pad_token_id)
+    labels_padded = pad_sequence(labels, batch_first=True, padding_value=-100)
+    
+    return {"input_ids": input_ids_padded, "labels": labels_padded}
 
 
 # 构建EncoderDecoderModel，使用ViTEncoderWrapper
@@ -159,11 +176,17 @@ rouge = evaluate.load("rouge")
 def compute_metrics(pred):
     labels_ids = pred.label_ids
     pred_ids = pred.predictions
-    pred_str = decoder_tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-    # 尝试转换为torch.Tensor并替换-100
-    if not isinstance(labels_ids, torch.Tensor):
-        labels_ids = torch.tensor(labels_ids)
-    labels_ids = labels_ids.clone()
+    # 动态pad到同一长度
+    import torch
+    from torch.nn.utils.rnn import pad_sequence
+    # 转为list of tensor
+    labels_ids = [torch.tensor(x) for x in labels_ids]
+    pred_ids = [torch.tensor(x) for x in pred_ids]
+    # pad
+    labels_ids = pad_sequence(labels_ids, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
+    pred_ids = pad_sequence(pred_ids, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
+    # decode
+    pred_str = decoder_tokenizer.batch_decode(pred_ids.tolist(), skip_special_tokens=True)
     labels_ids[labels_ids == -100] = decoder_tokenizer.pad_token_id
     label_str = decoder_tokenizer.batch_decode(labels_ids.tolist(), skip_special_tokens=True)
     rouge_output = rouge.compute(predictions=pred_str, references=label_str, rouge_types=["rouge2"])["rouge2"]
@@ -214,36 +237,48 @@ my_args = MySeq2SeqTrainingArguments(
 #         param.requires_grad = False
 # print("仅训练cross-attention层，其余参数已冻结。")
 
+
 trainer = MySeq2SeqTrainer(
     model=model,
     args=my_args,
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     tokenizer=decoder_tokenizer,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
+    data_collator=dynamic_pad_collate_fn
 )
-
-from peft import get_peft_model, LoraConfig, TaskType
 
 
 # 先开启梯度检查点
 model.gradient_checkpointing_enable()
 model.to(device)
 
-# LoRA配置
+# LoRA配置 - 只应用到encoder
 lora_config = LoraConfig(
     task_type=TaskType.SEQ_2_SEQ_LM,
     inference_mode=False,
     r=8,  # 可调
     lora_alpha=32,  # 可调
     target_modules=[
-        "q_proj", "k_proj", "v_proj", "o_proj",  # encoder/decoder常见
-        "gate_proj", "up_proj", "down_proj",
-        "c_attn", "c_proj", "c_fc", "q_attn"
+        # 通用的attention和MLP模块名，应该能匹配到encoder中的模块
+        "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
+        "gate_proj", "up_proj", "down_proj",     # MLP层
+        "fc1", "fc2", "dense"                    # 其他可能的线性层
     ],
+    modules_to_save=None,  # 不保存任何额外模块
     lora_dropout=0.1
 )
 model = get_peft_model(model, lora_config)
+
+# 手动解冻GPT2 decoder的全部参数，保持encoder的LoRA参数
+for name, param in model.named_parameters():
+    if "decoder" in name and "lora" not in name.lower():
+        param.requires_grad = True
+    elif "encoder" in name and "lora" not in name.lower():
+        # 确保encoder的原始参数被冻结，只训练LoRA
+        param.requires_grad = False
+        
+print("配置完成：encoder使用LoRA，GPT2 decoder全参数训练")
 model.print_trainable_parameters()
 
 trainer.train()

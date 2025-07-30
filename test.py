@@ -1,6 +1,10 @@
-import kagglehub
+from transformers import AutoModelForCausalLM
+import safetensors.torch
 
-# Download latest version
-path = kagglehub.dataset_download("adityajn105/flickr8k")
+# 1. 加载完整的模型（含 lm_head）
+model = AutoModelForCausalLM.from_pretrained(
+    "/root/autodl-fs/models/jpeg-lm",
+)
 
-print("Path to dataset files:", path)
+# 2. 把 state_dict（包含所有参数和 buffer）导出为 safetensors
+safetensors.torch.save_file(model.state_dict(), "model.safetensors")
