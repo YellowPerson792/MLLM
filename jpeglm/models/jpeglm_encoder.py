@@ -18,7 +18,7 @@ class JpegLMEncoder(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.model = AutoModel.from_pretrained(config.name_or_path, config=config)
-        self.pooling_strategy = getattr(config, 'pooling_strategy', 'last')
+        self.pooling_strategy = getattr(config, 'pooling_strategy', 'mean')
         self.gradient_checkpointing = False
         self.post_init()
 
@@ -117,26 +117,20 @@ class JpegLMEncoder(PreTrainedModel):
 
 class JpegLMEncoderForClassification(PreTrainedModel):
     """
-    将 JpegLM 改造成 Encoder 架构的分类模型
-    支持多种池化策略和自定义分类头
+    基于 JpegLMEncoder 的分类模型，仅添加分类头
+    复用 JpegLMEncoder 的编码能力，避免重复代码
     """
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
         
-        # 加载预训练的 transformer 层（encoder 模式）
-        self.model = AutoModel.from_pretrained(
-            config.name_or_path,
-            config=config
-        )
+        # 使用 JpegLMEncoder 作为主干网络
+        self.encoder = JpegLMEncoder(config)
         
         # 分类头组件
-        self.dropout = nn.Dropout(config.classifier_dropout if hasattr(config, 'classifier_dropout') else 0.3)
+        self.dropout = nn.Dropout(config.classifier_dropout if hasattr(config, 'classifier_dropout') else 0.1)
         self.pre_classifier = nn.LayerNorm(config.hidden_size)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        
-        # 池化策略
-        self.pooling_strategy = getattr(config, 'pooling_strategy', 'last')
         
         # 执行初始化
         self.post_init()
@@ -149,44 +143,18 @@ class JpegLMEncoderForClassification(PreTrainedModel):
             nn.init.zeros_(self.classifier.bias)
 
     def get_input_embeddings(self):
-        return self.model.get_input_embeddings()
+        return self.encoder.get_input_embeddings()
 
     def set_input_embeddings(self, embeddings):
-        self.model.set_input_embeddings(embeddings)
+        self.encoder.set_input_embeddings(embeddings)
 
-    def _pool_hidden_states(self, sequence_output, attention_mask):
-        """
-        根据策略池化隐藏状态
-        
-        Args:
-            sequence_output: [batch_size, seq_len, hidden_size]
-            attention_mask: [batch_size, seq_len]
-            
-        Returns:
-            pooled_output: [batch_size, hidden_size]
-        """
-        if self.pooling_strategy == "mean":
-            # 平均池化（排除padding）
-            mask_expanded = attention_mask.unsqueeze(-1).expand(sequence_output.size()).float()
-            sum_embeddings = torch.sum(sequence_output * mask_expanded, 1)
-            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-            pooled_output = sum_embeddings / sum_mask
-            
-        elif self.pooling_strategy == "max":
-            # 最大池化
-            pooled_output = torch.max(sequence_output, dim=1)[0]
-            
-        elif self.pooling_strategy == "cls":
-            # 使用第一个token ([CLS] 风格)
-            pooled_output = sequence_output[:, 0]
-            
-        else:  # last (default for GPT-style models)
-            # 使用最后一个非padding token
-            seq_lengths = attention_mask.sum(dim=1) - 1
-            batch_size = sequence_output.size(0)
-            pooled_output = sequence_output[torch.arange(batch_size), seq_lengths]
-            
-        return pooled_output
+    def gradient_checkpointing_enable(self):
+        """启用梯度检查点"""
+        self.encoder.gradient_checkpointing_enable()
+
+    def gradient_checkpointing_disable(self):
+        """禁用梯度检查点"""
+        self.encoder.gradient_checkpointing_disable()
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
         """
@@ -200,19 +168,17 @@ class JpegLMEncoderForClassification(PreTrainedModel):
         Returns:
             dict: 包含 loss (如果提供labels) 和 logits
         """
-        # 获取transformer输出
-        outputs = self.model(
+        # 获取编码器输出
+        encoder_outputs = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=False
+            **kwargs
         )
         
-        sequence_output = outputs.last_hidden_state
+        sequence_output = encoder_outputs.last_hidden_state
         
-        # 池化
-        pooled_output = self._pool_hidden_states(sequence_output, attention_mask)
+        # 使用编码器的池化方法
+        pooled_output = self.encoder._pool_hidden_states(sequence_output, attention_mask)
         
         # 分类头
         pooled_output = self.pre_classifier(pooled_output)
@@ -229,7 +195,7 @@ class JpegLMEncoderForClassification(PreTrainedModel):
         return {
             'loss': loss,
             'logits': logits,
-            'hidden_states': outputs.hidden_states if outputs.hidden_states else None,
+            'hidden_states': encoder_outputs.hidden_states if encoder_outputs.hidden_states else None,
             'last_hidden_state': sequence_output
         }
 
@@ -386,9 +352,9 @@ def create_jpeglm_encoder(model_name_or_path, pooling_strategy='last', **kwargs)
     
     return model
 
-def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_strategy='last', **kwargs):
+def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_strategy='mean', **kwargs):
     """
-    创建 JpegLM Encoder 分类模型
+    创建 JpegLM Encoder 分类模型，基于 JpegLMEncoder
     
     Args:
         model_name_or_path: 预训练模型路径
@@ -399,6 +365,9 @@ def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_s
     Returns:
         JpegLMEncoderForClassification: 配置好的分类模型
     """
+    print(f"正在创建基于 JpegLMEncoder 的分类模型...")
+    
+    # 首先创建基础 encoder 配置
     config = AutoConfig.from_pretrained(model_name_or_path)
     
     # 基础配置
@@ -423,6 +392,7 @@ def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_s
     print(f"  - 类别数: {num_labels}")
     print(f"  - 池化策略: {pooling_strategy}")
     print(f"  - 隐藏维度: {config.hidden_size}")
+    print(f"  - 复用 JpegLMEncoder 主干网络")
     
     return model
 

@@ -1,36 +1,45 @@
 import os
 import torch
-from transformers import EncoderDecoderModel, AutoTokenizer, GenerationConfig, GPT2Config, GPT2LMHeadModel
-from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder
-from datasets import load_dataset
-from utils.data_utils import convert_img_to_bytes, create_preprocess_transform
-from peft import PeftModel
+from transformers import EncoderDecoderModel, AutoTokenizer, GenerationConfig, GPT2Config, GPT2LMHeadModel, ViTFeatureExtractor
 from PIL import Image
+from datasets import load_dataset
+from peft import PeftModel
 
 # 配置
-encoder_path = "/root/autodl-fs/models/jpeg-lm"
+encoder_path = "google/vit-base-patch16-224"
 decoder_path = "gpt2"
-model_ckpt = "/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-mnist-classification/checkpoint-2560"  # 你的模型保存路径
+model_ckpt = "D:/MLLMs/MLLM/vit-gpt2-mnist-cls/checkpoint-512"  # 修改为你的模型保存路径
+image_size = 32
+max_length = 10
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# 加载分词器
-encoder_tokenizer = AutoTokenizer.from_pretrained(encoder_path)
+# 加载分词器和特征提取器
+feature_extractor = ViTFeatureExtractor.from_pretrained(encoder_path)
 decoder_tokenizer = AutoTokenizer.from_pretrained(decoder_path)
 decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
 
 # 加载模型
+# 构建ViT-GPT2结构
+from transformers import ViTModel
+class ViTEncoderWrapper(ViTModel):
+    def __init__(self, config):
+        super().__init__(config)
+    def forward(self, pixel_values=None, input_ids=None, attention_mask=None, inputs_embeds=None, **kwargs):
+        return super().forward(pixel_values=pixel_values, **{k: v for k, v in kwargs.items() if k in ['head_mask', 'output_attentions', 'output_hidden_states', 'return_dict']})
+
 gpt2_config = GPT2Config.from_pretrained(decoder_path)
 gpt2_config.add_cross_attention = True
 gpt2 = GPT2LMHeadModel.from_pretrained(decoder_path, config=gpt2_config)
-encoder = create_jpeglm_encoder(encoder_path)
-base_model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
+vit = ViTEncoderWrapper.from_pretrained(encoder_path)
+base_model = EncoderDecoderModel(encoder=vit, decoder=gpt2)
 base_model.config.decoder_start_token_id = decoder_tokenizer.bos_token_id
 base_model.config.pad_token_id = decoder_tokenizer.pad_token_id
 base_model.config.eos_token_id = decoder_tokenizer.eos_token_id
 base_model.config.vocab_size = base_model.config.decoder.vocab_size
-base_model.main_input_name = "input_ids"
+base_model.main_input_name = "pixel_values"
 generation_config = GenerationConfig(
-    max_new_tokens=1,
+    max_new_tokens=max_length,
     num_beams=1,
     no_repeat_ngram_size=3,
     decoder_start_token_id=base_model.config.decoder_start_token_id,
@@ -40,7 +49,8 @@ generation_config = GenerationConfig(
 )
 base_model.generation_config = generation_config
 
-# 加载LoRA权重
+# 加载保存的检查点
+# model = EncoderDecoderModel.from_pretrained(model_ckpt)
 model = PeftModel.from_pretrained(base_model, model_ckpt)
 model = model.to(device)
 model.eval()
@@ -59,7 +69,7 @@ def extract_digit_from_text(text):
     for word, digit in digit_words.items():
         if word in text:
             return digit
-    digits = re.findall(r'\\d', text)
+    digits = re.findall(r'\d', text)
     if digits:
         return int(digits[0])
     return None
@@ -68,21 +78,15 @@ def extract_digit_from_text(text):
 mnist_dataset = load_dataset("ylecun/mnist")
 test_data = mnist_dataset["test"].select(range(20))  # 只推理前20条，可自行调整
 
-transform = create_preprocess_transform(96)
-
 print("==== 推理结果 ====")
 for idx, item in enumerate(test_data):
-    pil_image = item['image'].convert("RGB")
+    pil_image = item['image'].convert("RGB").resize((image_size, image_size))
     label = item['label']
     # 预处理
-    img = transform(pil_image)
-    jpeg_str = convert_img_to_bytes(img)
-    input_ids = [encoder_tokenizer.bos_token_id] + encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
-    input_ids = input_ids[:1024]
-    input_ids = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0).to(device)
+    pixel_values = feature_extractor(pil_image, return_tensors="pt").pixel_values.to(device)
     # 生成
     with torch.no_grad():
-        generated_ids = model.generate(inputs=input_ids, generation_config=generation_config)
+        generated_ids = model.generate(pixel_values=pixel_values, generation_config=generation_config)
     generated_text = decoder_tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     pred_digit = extract_digit_from_text(generated_text)
     print(f"[{idx}] True: {label} | Gen: {generated_text} | Pred: {pred_digit} | {'✓' if pred_digit==label else '✗'}")

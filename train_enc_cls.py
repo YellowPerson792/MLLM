@@ -1,13 +1,8 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# JpegLM Encoder Architecture Training Script (Fixed)
-# 多卡训练示例：
-# torchrun --nproc_per_node=4 train_enc_cls.py --model_name_or_path /path/to/model --output_dir /path/to/output --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --image_size 96
-# 或使用 accelerate launch 方式
-# accelerate launch --num_processes 2 /root/autodl-tmp/MLLM/train_enc_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --image_size 96 --disable_wandb
-#
+# 示例运行命令：
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --image_size 96 --dataset_mode mnist --disable_wandb --probe_layers "['classifier','pre_classifier']"
+
 # 将 JpegLM 从生成式语言模型改造成 encoder 架构进行分类任务
-# python /root/autodl-tmp/MLLM/train_enc_cls.py --model_name_or_path /root/autodl-tmp/MLLM/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --dataset_mode mnist --pooling_strategy mean --max_seq_len 1024 --image_size 96 --disable_wandb
+# python /root/autodl-tmp/MLLM/jpeg-lm/classification_encoder_train.py --model_name_or_path /root/autodl-fs/models/jpeg-lm --output_dir /root/autodl-tmp/MLLM/checkpoints/jpeglm-encoder --seed 42 --lora_r 8 --lora_alpha 32 --logging_steps 5 --wandb_run_name jpeglm-encoder-mnist-v1 --batch_size 2 --gradient_accumulation_steps 8 --epochs 3 --learning_rate 2e-4 --classifier_lr 5e-4 --train_subset_size 6000 --test_subset_size 1000 --fp16 --pooling_strategy mean --max_seq_len 1024 --image_size 96 --dataset_mode mnist --disable_wandb
 
 import argparse
 import torch
@@ -15,10 +10,7 @@ import torch.nn as nn
 import sys
 import os
 from transformers import (
-    AutoConfig,
     AutoTokenizer,
-    AutoModel,
-    PreTrainedModel,
     TrainingArguments,
     Trainer,
     set_seed,
@@ -26,73 +18,25 @@ from transformers import (
 from datasets import load_dataset
 from peft import get_peft_model, LoraConfig, TaskType
 
+# ===== 冻结和解冻指定层 =====
+def freeze_and_unfreeze(model, probe_layers=None):
+    # 冻结所有参数
+    for param in model.parameters():
+        param.requires_grad = False
+    # 解冻分类头和自定义层
+    probe_layers = probe_layers or ['classifier', 'pre_classifier']
+    for name, param in model.named_parameters():
+        for probe in probe_layers:
+            if probe in name:
+                param.requires_grad = True
+
 # 添加 utils 路径以导入统一的数据处理工具
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils'))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'utils'))
 from data_utils import tokenize_example_for_training, get_dataset_config, create_preprocess_transform
 
-class JpegLMEncoderForClassification(PreTrainedModel):
-    """
-    将 JpegLM 改造成 Encoder 架构的分类模型
-    """
-    def __init__(self, config):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        # 加载预训练的 transformer 层（encoder 模式）
-        self.model = AutoModel.from_pretrained(
-            config.name_or_path,
-            config=config
-        )
-        # 分类头
-        self.dropout = nn.Dropout(0.3)
-        self.pre_classifier = nn.LayerNorm(config.hidden_size)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        # 池化策略
-        self.pooling_strategy = config.pooling_strategy
-        # 执行父类初始化，然后自定义初始化分类头
-        self.post_init()
-        self._init_classifier_weights()
-
-    def _init_classifier_weights(self):
-        """自定义初始化分类头权重，确保初始 logits 接近 0"""
-        nn.init.normal_(self.classifier.weight, mean=0.0, std=0.02)
-        if self.classifier.bias is not None:
-            nn.init.zeros_(self.classifier.bias)
-
-    def get_input_embeddings(self):
-        return self.model.get_input_embeddings()
-
-    def set_input_embeddings(self, embeddings):
-        self.model.set_input_embeddings(embeddings)
-
-    def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=False
-        )
-        sequence_output = outputs.last_hidden_state
-        # 池化
-        if self.pooling_strategy == "mean":
-            mask_expanded = attention_mask.unsqueeze(-1).expand(sequence_output.size()).float()
-            sum_embeddings = torch.sum(sequence_output * mask_expanded, 1)
-            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-            pooled_output = sum_embeddings / sum_mask
-        elif self.pooling_strategy == "max":
-            pooled_output = torch.max(sequence_output, dim=1)[0]
-        elif self.pooling_strategy == "cls":
-            pooled_output = sequence_output[:, 0]
-        else:  # last
-            seq_lengths = attention_mask.sum(dim=1) - 1
-            pooled_output = sequence_output[torch.arange(sequence_output.size(0)), seq_lengths]
-        pooled_output = self.pre_classifier(pooled_output)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-        loss = None
-        if labels is not None:
-            loss = nn.CrossEntropyLoss()(logits.view(-1, self.num_labels), labels.view(-1))
-        return { 'loss': loss, 'logits': logits }
+# 导入自定义的模型结构
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models'))
+from jpeglm_encoder import create_jpeglm_encoder_model
 
 
 def get_dataset_and_field(dataset_mode):
@@ -100,21 +44,20 @@ def get_dataset_and_field(dataset_mode):
         return 'ylecun/mnist', 'image'
     elif dataset_mode == 'cifar10':
         return 'uoft-cs/cifar10', 'img'
+    elif dataset_mode == 'imagenet100':
+        return None, None  # 特殊处理，见下方
     else:
         raise ValueError(f"Unsupported dataset_mode: {dataset_mode}")
 
 
 def create_encoder_model(model_name_or_path, num_labels=10, pooling_strategy='mean'):
-    config = AutoConfig.from_pretrained(model_name_or_path)
-    config.num_labels = num_labels
-    config.use_cache = False
-    # 关键修正：切换为 encoder
-    config.is_decoder = False
-    config.add_cross_attention = False
-    config.pooling_strategy = pooling_strategy
-    config.name_or_path = model_name_or_path
-    model = JpegLMEncoderForClassification(config)
-    return model
+    """使用外部模型定义创建编码器模型"""
+    return create_jpeglm_encoder_model(
+        model_name_or_path=model_name_or_path,
+        num_labels=num_labels,
+        pooling_strategy=pooling_strategy,
+        classifier_dropout=0.1
+    )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="JpegLM Encoder Architecture Training")
@@ -136,37 +79,25 @@ if __name__ == '__main__':
     parser.add_argument('--bf16', action='store_true', help="使用 BF16")
     parser.add_argument('--wandb_run_name', type=str, default='jpeglm-encoder-mnist-v1', help="W&B 运行名称")
     parser.add_argument('--disable_wandb', action='store_true', help="禁用 W&B")
-    parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist','cifar10'], help="数据集模式")
+    parser.add_argument('--dataset_mode', type=str, default='mnist', choices=['mnist','cifar10','imagenet100'], help="数据集模式")
+    parser.add_argument('--imagenet100_dir', type=str, default='/root/autodl-fs/datasets/imagenet100', help="imagenet100根目录")
     parser.add_argument('--image_size', type=int, default=96, help="输入图像尺寸")
     parser.add_argument('--max_seq_len', type=int, default=2048, help="最大序列长度")
     parser.add_argument('--pooling_strategy', type=str, default='mean', choices=['mean','max','cls','last'], help="池化策略")
+    parser.add_argument('--probe_layers', type=str, default=None, help="自定义解冻层名列表，如 ['classifier','pre_classifier'] 或 classifier,pre_classifier")
     args = parser.parse_args()
 
     set_seed(args.seed)
-    
-    # 多卡与显存优化（简洁版）
-    local_rank = int(os.environ.get('LOCAL_RANK', -1))
-    if local_rank != -1:
-        torch.cuda.set_device(local_rank)
-        device = torch.device('cuda', local_rank)
-        print(f"[Distributed] local_rank={local_rank}, set device to cuda:{local_rank}")
-    else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-        if not args.fp16 and not args.bf16:
-            args.fp16 = True
-            print("[Auto] 启用fp16")
-    pin_memory = torch.cuda.is_available()
-    num_workers = 12  # 与map的num_proc一致，或可参数化
-    # 仅在多卡（nproc_per_node>1）时设置prefetch_factor，单卡不设置
-    n_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
-    prefetch = 2 if n_gpus > 1 and num_workers > 0 else None
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=False)
+    if args.dataset_mode == 'imagenet100':
+        num_labels = 100
+    else:
+        num_labels = 10
     model = create_encoder_model(
         args.model_name_or_path,
-        num_labels=10,
+        num_labels=num_labels,
         pooling_strategy=args.pooling_strategy
     )
 
@@ -176,48 +107,108 @@ if __name__ == '__main__':
         print("✓ 已启用梯度检查点以避免 OOM")
 
     # LoRA 设置
-    LORA_TARGET = ["q_proj","k_proj","v_proj","o_proj",
-                   "gate_proj","up_proj","down_proj"]
-    peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
-                              inference_mode=False,
-                              r=args.lora_r,
-                              lora_alpha=args.lora_alpha,
-                              target_modules=LORA_TARGET,
-                              lora_dropout=0.1,
-                              modules_to_save=["classifier","pre_classifier"])
-    model = get_peft_model(model, peft_config)
+    # LORA_TARGET = ["q_proj","k_proj","v_proj","o_proj",
+    #                "gate_proj","up_proj","down_proj"]
+    # peft_config = LoraConfig(task_type=TaskType.SEQ_CLS,
+    #                           inference_mode=False,
+    #                           r=args.lora_r,
+    #                           lora_alpha=args.lora_alpha,
+    #                           target_modules=LORA_TARGET,
+    #                           lora_dropout=0.1)
+    # model = get_peft_model(model, peft_config)
+    
+    # 冻结和解冻指定层，可通过 --probe_layers 参数自定义
+    import ast
+    probe_layers = None
+    if hasattr(args, 'probe_layers') and args.probe_layers:
+        # 支持逗号分隔或 Python list 字符串
+        try:
+            probe_layers = ast.literal_eval(args.probe_layers)
+            if not isinstance(probe_layers, list):
+                probe_layers = [str(probe_layers)]
+        except Exception:
+            probe_layers = [x.strip() for x in args.probe_layers.split(',') if x.strip()]
+    freeze_and_unfreeze(model, probe_layers)
+    # 打印可训练参数
+    print("可训练参数:")
+    trainable_count = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"  {name}")
+            trainable_count += param.numel()
+    print(f"可训练参数总量: {trainable_count}")
     model = model.to(device)
 
     # 加载数据集
-    dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
-    ds = load_dataset(dataset_name)
-    if args.dataset_mode == 'mnist':
-        ds = ds.cast_column('image', ds['train'].features['image'])
-    else:
-        ds = ds.cast_column('img', ds['train'].features['img'])
-    train_ds = ds['train']; test_ds = ds['test']
-    if args.train_subset_size:
-        train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
-    if args.test_subset_size:
-        test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
+    if args.dataset_mode == 'imagenet100':
+        import glob
+        from PIL import Image
+        import random
+        # 获取所有类别文件夹
+        class_dirs = sorted([d for d in os.listdir(args.imagenet100_dir) if os.path.isdir(os.path.join(args.imagenet100_dir, d))])
+        class_to_idx = {cls: idx for idx, cls in enumerate(class_dirs)}
+        # 收集所有图片路径和标签
+        all_samples = []
+        for cls in class_dirs:
+            img_dir = os.path.join(args.imagenet100_dir, cls)
+            img_files = glob.glob(os.path.join(img_dir, '*.JPEG')) + glob.glob(os.path.join(img_dir, '*.jpg'))
+            for img_path in img_files:
+                all_samples.append({'image_path': img_path, 'label': class_to_idx[cls]})
+        # 划分训练/测试
+        random.seed(args.seed)
+        random.shuffle(all_samples)
+        train_samples = all_samples[:args.train_subset_size] if args.train_subset_size else all_samples
+        test_samples = all_samples[-args.test_subset_size:] if args.test_subset_size else all_samples
 
-    # 数据预处理：与 test.py 保持一致
-    preprocess = create_preprocess_transform(args.image_size)
-    
-    train_ds = train_ds.map(
-        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
-        batched=False, 
-        remove_columns=train_ds.column_names,
-        num_proc=12,
-        desc="处理训练数据"
-    )
-    test_ds = test_ds.map(
-        lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
-        batched=False, 
-        remove_columns=test_ds.column_names,
-        num_proc=12,
-        desc="处理测试数据"
-    )
+        preprocess = create_preprocess_transform(args.image_size)
+        def process_imagenet_sample(ex):
+            img = Image.open(ex['image_path']).convert('RGB')
+            ex_proc = {'image': img, 'label': ex['label']}
+            out = tokenize_example_for_training(ex_proc, tokenizer, 'image', args.max_seq_len, preprocess)
+            return out
+
+        # 转为datasets格式
+        from datasets import Dataset
+        train_ds = Dataset.from_list(train_samples).map(
+            process_imagenet_sample,
+            batched=False,
+            num_proc=12,
+            desc="处理imagenet100训练数据"
+        )
+        test_ds = Dataset.from_list(test_samples).map(
+            process_imagenet_sample,
+            batched=False,
+            num_proc=12,
+            desc="处理imagenet100测试数据"
+        )
+    else:
+        dataset_name, image_field = get_dataset_and_field(args.dataset_mode)
+        ds = load_dataset(dataset_name)
+        if args.dataset_mode == 'mnist':
+            ds = ds.cast_column('image', ds['train'].features['image'])
+        else:
+            ds = ds.cast_column('img', ds['train'].features['img'])
+        train_ds = ds['train']; test_ds = ds['test']
+        if args.train_subset_size:
+            train_ds = train_ds.shuffle(seed=args.seed).select(range(args.train_subset_size))
+        if args.test_subset_size:
+            test_ds = test_ds.shuffle(seed=args.seed).select(range(args.test_subset_size))
+
+        preprocess = create_preprocess_transform(args.image_size)
+        train_ds = train_ds.map(
+            lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
+            batched=False, 
+            remove_columns=train_ds.column_names,
+            num_proc=12,
+            desc="处理训练数据"
+        )
+        test_ds = test_ds.map(
+            lambda ex: tokenize_example_for_training(ex, tokenizer, image_field, args.max_seq_len, preprocess), 
+            batched=False, 
+            remove_columns=test_ds.column_names,
+            num_proc=12,
+            desc="处理测试数据"
+        )
     
     # ===== 样本token预览 =====
     preview_num = 1
@@ -253,49 +244,84 @@ if __name__ == '__main__':
         learning_rate=args.learning_rate,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
-        save_total_limit=1,
+        save_total_limit=3,
         fp16=args.fp16,
         bf16=args.bf16,
         seed=args.seed,
         eval_strategy='epoch',
         report_to=[] if args.disable_wandb else ['wandb'],
         run_name=None if args.disable_wandb else args.wandb_run_name,
-        local_rank=local_rank if local_rank != -1 else None,
-        dataloader_drop_last=True,
-        dataloader_pin_memory=pin_memory,
-        dataloader_num_workers=num_workers,
-        **({'dataloader_prefetch_factor': prefetch} if prefetch is not None else {}),
     )
 
     def compute_metrics(p):
         preds, label_ids = p.predictions, p.label_ids
         preds = preds.argmax(-1)
-        return {'accuracy': (preds == label_ids).mean()}
+        accuracy = (preds == label_ids).mean()
+        
+        # 简化的验证信息
+        print(f"验证准确率: {accuracy:.4f}")
+        
+        return {'accuracy': accuracy}
 
-    # 自定义Trainer，日志/上传wandb的损失除以梯度累计步数，但反向传播不变
-    class LoggingAdjustedTrainer(Trainer):
-        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+    # 创建损失调整 Trainer，确保 wandb 记录调整后的损失
+    class GradientAdjustedTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+            """
+            返回调整后的损失，确保 wandb 和日志都记录正确的损失
+            """
             outputs = model(**inputs)
-            loss = outputs['loss'] if isinstance(outputs, dict) else outputs.loss
-            # 只影响日志和wandb，不影响反向传播
-            if self.model.training and hasattr(self.args, 'gradient_accumulation_steps'):
-                display_loss = loss / self.args.gradient_accumulation_steps
-                if return_outputs:
-                    return display_loss, outputs
-                return display_loss
+            
+            # 处理不同的输出格式
+            if hasattr(outputs, 'loss'):
+                loss = outputs.loss
+            elif isinstance(outputs, dict) and 'loss' in outputs:
+                loss = outputs['loss']
             else:
-                if return_outputs:
-                    return loss, outputs
-                return loss
+                raise ValueError(f"无法从模型输出中获取损失: {type(outputs)}")
+            
+            # 在训练时将损失除以梯度累积步数，使其与验证损失可比较
+            if self.model.training and hasattr(self.args, 'gradient_accumulation_steps'):
+                # 注意：这里直接调整返回的损失，会影响 wandb 记录
+                adjusted_loss = loss / self.args.gradient_accumulation_steps
+                return (adjusted_loss, outputs) if return_outputs else adjusted_loss
+            else:
+                # 验证时保持原损失
+                return (loss, outputs) if return_outputs else loss
 
-    trainer = LoggingAdjustedTrainer(
+    # 动态padding到batch最大长度
+    def collate_fn(batch):
+        input_lens = [sum([1 for t in b['input_ids'] if t != tokenizer.pad_token_id and t is not None]) for b in batch]
+        max_input_len = max(input_lens)
+        input_ids = []
+        attention_mask = []
+        labels = []
+        for b in batch:
+            inp = b['input_ids'][:max_input_len]
+            inp += [tokenizer.pad_token_id] * (max_input_len - len(inp))
+            input_ids.append(inp)
+            mask = b['attention_mask'][:max_input_len] if 'attention_mask' in b else [1]*len(inp)
+            mask += [0] * (max_input_len - len(mask))
+            attention_mask.append(mask)
+            lab = b['labels']
+            labels.append(lab)
+        input_ids = torch.tensor(input_ids)
+        attention_mask = torch.tensor(attention_mask)
+        labels_tensor = torch.tensor(labels)
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels_tensor
+        }
+
+    trainer = GradientAdjustedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
-        optimizers=(create_optimizer(), None)
+        optimizers=(create_optimizer(), None),
+        data_collator=collate_fn
     )
 
     # 开始训练
