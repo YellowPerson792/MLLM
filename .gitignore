@@ -1,6 +1,5 @@
 checkpoints/
 __pycache__/
-.ipynb_checkpoints/
 huggingface_token
 trained_models/
 datasets/
@@ -9,4 +8,3 @@ LLaMA-Factory/
 image-captioning-output/
 VIT_large_gpt2/
 ImageCaption/VIT_GPT2_EDM/
-.venv/

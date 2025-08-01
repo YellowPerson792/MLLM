@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 5 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import sys
 import os
@@ -189,15 +189,33 @@ def compute_metrics(pred):
     acc = (preds == labels).sum() / len(labels)
     return {"accuracy": round(float(acc), 4)}
 
-# ====== 自定义Trainer ======
-class MyClsTrainer(MySeq2SeqTrainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
-        labels = inputs.pop("labels")
-        outputs = model(**inputs, labels=labels)
-        loss = outputs.loss
-        return (loss, outputs) if return_outputs else loss
 
-trainer = MyClsTrainer(
+# ====== 自定义分类Trainer，重写evaluate方法 ======
+class ClsTrainer(MySeq2SeqTrainer):
+    def evaluate(self, eval_dataset=None, desc="Eval", ignore_keys=None, metric_key_prefix: str = "eval"):
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        self.model.eval()
+        total, correct = 0, 0
+        total_loss = 0.0
+        with torch.no_grad():
+            for batch in tqdm(eval_dataset, desc=f"{desc} (custom)"):
+                device = self.args.device if hasattr(self.args, 'device') else self.model.device
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+                labels = batch["labels"].to(device)
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss
+                logits = outputs.logits
+                preds = logits.argmax(dim=-1)
+                correct += (preds == labels).sum().item()
+                total += labels.size(0)
+                total_loss += loss.item() * labels.size(0)
+        acc = correct / total if total > 0 else 0.0
+        avg_loss = total_loss / total if total > 0 else 0.0
+        print(f"[Custom Eval] Loss: {avg_loss:.4f}  Accuracy: {acc:.4f}  (Total: {total})")
+        return avg_loss, acc
+
+trainer = ClsTrainer(
     model=model,
     args=my_args,
     train_dataset=train_dataset,
