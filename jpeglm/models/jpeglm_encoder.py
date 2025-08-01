@@ -168,15 +168,17 @@ class JpegLMEncoderForClassification(PreTrainedModel):
         Returns:
             dict: 包含 loss (如果提供labels) 和 logits
         """
+        # attention_mask兜底
+        if attention_mask is None:
+            print("Warning: attention_mask is None, using default mask.")
+            attention_mask = torch.ones(input_ids.shape, dtype=input_ids.dtype, device=input_ids.device)
         # 获取编码器输出
         encoder_outputs = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
             **kwargs
         )
-        
         sequence_output = encoder_outputs.last_hidden_state
-        
         # 使用编码器的池化方法
         pooled_output = self.encoder._pool_hidden_states(sequence_output, attention_mask)
         
@@ -192,12 +194,13 @@ class JpegLMEncoderForClassification(PreTrainedModel):
             loss_fct = nn.CrossEntropyLoss(reduction='mean')
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
         
-        return {
-            'loss': loss,
-            'logits': logits,
-            'hidden_states': encoder_outputs.hidden_states if encoder_outputs.hidden_states else None,
-            'last_hidden_state': sequence_output
-        }
+        from transformers.modeling_outputs import SequenceClassifierOutput
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states if encoder_outputs.hidden_states else None,
+            attentions=None
+        )
 
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, PreTrainedModel, GenerationMixin
 import torch.nn as nn
