@@ -234,6 +234,9 @@ class MySeq2SeqTrainer:
                 # 动态获取主输入名
                 input_name = getattr(self.model, 'main_input_name', 'input_ids')
                 model_inputs = {input_name: batch[input_name].to(self.device), 'labels': batch['labels'].to(self.device)}
+                # attention_mask支持
+                if 'attention_mask' in batch:
+                    model_inputs['attention_mask'] = batch['attention_mask'].to(self.device)
                 with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
                     outputs = self.model(**model_inputs)
                     loss = outputs.loss / args.gradient_accumulation_steps
@@ -329,11 +332,32 @@ class MySeq2SeqTrainer:
         tqdm.write("=" * 80)
         tqdm.write(f"🎉 训练完成！总计 {args.num_train_epochs} 个epoch，{global_step} 个batch步数，{optimizer_step} 个优化器步数")
         tqdm.write("=" * 80)
-
-    def evaluate(self, val_loader=None, desc="Eval"):
-        if val_loader is None:
-            val_loader = DataLoader(self.eval_dataset, batch_size=self.args.eval_batch_size)
-        return self._evaluate(val_loader, desc)
+        
+    def evaluate(self, val_loader, desc):
+        """评估模型性能，compute_metrics需外部传入"""
+        self.model.eval()
+        val_loss, predictions, references = 0, [], []
+        gen_config = getattr(self.model, 'generation_config', None)
+        input_name = getattr(self.model, 'main_input_name', 'input_ids')
+        with torch.no_grad():
+            for batch in tqdm(val_loader, desc=desc, ncols=100, leave=False):
+                batch_inputs = {input_name: batch[input_name].to(self.device)}
+                if 'attention_mask' in batch:
+                    batch_inputs['attention_mask'] = batch['attention_mask'].to(self.device)
+                lbl = batch["labels"].to(self.device)
+                out = self.model(**batch_inputs, labels=lbl)
+                val_loss += out.loss.item()
+                if hasattr(self.model, 'generate') and gen_config is not None:
+                    encoder_outputs = self.model.get_encoder()(**{input_name: batch_inputs[input_name]})
+                    preds = self.model.generate(encoder_outputs=encoder_outputs, generation_config=gen_config)
+                    predictions.extend(preds.cpu().tolist())
+                    references.extend(lbl.cpu().tolist())
+        self.model.train()
+        if predictions and self.compute_metrics:
+            pred = type('Pred', (), {})()
+            pred.predictions, pred.label_ids = predictions, references
+            return val_loss / len(val_loader), self.compute_metrics(pred)
+        return val_loss / len(val_loader)
 
     def _save_checkpoint(self, step, saved_checkpoints, optimizer=None, scheduler=None, scaler=None, epoch=0, step_in_epoch=0):
         """保存检查点，包括模型、分词器、optimizer、scheduler、scaler、计数器"""
@@ -377,33 +401,6 @@ class MySeq2SeqTrainer:
     def _compute_grad_norm(self):
         """计算模型梯度范数"""
         return sum((p.grad.data.norm(2).item() ** 2 for p in self.model.parameters() if p.grad is not None)) ** 0.5
-
-    def _evaluate(self, val_loader, desc):
-        """评估模型性能，compute_metrics需外部传入"""
-        self.model.eval()
-        val_loss, predictions, references = 0, [], []
-        gen_config = getattr(self.model, 'generation_config', None)
-        input_name = getattr(self.model, 'main_input_name', 'input_ids')
-        with torch.no_grad():
-            for batch in tqdm(val_loader, desc=desc, ncols=100, leave=False):
-                batch_inputs = {input_name: batch[input_name].to(self.device)}
-                lbl = batch["labels"].to(self.device)
-                out = self.model(**batch_inputs, labels=lbl)
-                val_loss += out.loss.item()
-                if hasattr(self.model, 'generate') and gen_config is not None:
-                    if input_name == "pixel_values":
-                        encoder_outputs = self.model.get_encoder()(pixel_values=batch_inputs[input_name])
-                    else:
-                        encoder_outputs = self.model.get_encoder()(input_ids=batch_inputs[input_name])
-                    preds = self.model.generate(encoder_outputs=encoder_outputs, generation_config=gen_config)
-                    predictions.extend(preds.cpu().tolist())
-                    references.extend(lbl.cpu().tolist())
-        self.model.train()
-        if predictions and self.compute_metrics:
-            pred = type('Pred', (), {})()
-            pred.predictions, pred.label_ids = predictions, references
-            return val_loss / len(val_loader), self.compute_metrics(pred)
-        return val_loss / len(val_loader)
 
 import os
 import shutil

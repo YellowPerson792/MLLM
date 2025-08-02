@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy epoch --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import sys
 import os
@@ -405,6 +405,3 @@ for idx in range(3):
         f.write(f"Correct: {pred_digit == true_label}\n")
 
 print("✓ 样例生成完成，结果保存在 output/ 目录中")
-
-
-

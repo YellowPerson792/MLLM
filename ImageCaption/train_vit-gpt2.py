@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_vit-gpt2.py --train_batch_size 8 --eval_batch_size 8 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 1 --report_to None
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2.py --train_batch_size 8 --eval_batch_size 8 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 1024 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 1 --report_to None
 
 import sys
 import os
@@ -13,18 +13,13 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
-from transformers import EncoderDecoderModel, GPT2LMHeadModel, ViTFeatureExtractor, ViTModel, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, default_data_collator, GenerationConfig, GPT2Config
+from transformers import EncoderDecoderModel, GPT2LMHeadModel, ViTFeatureExtractor, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, default_data_collator, GenerationConfig, GPT2Config
+from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder
 from sklearn.model_selection import train_test_split
 import datasets
 import multiprocessing as mp
-
-# 自定义ViT包装类，兼容EncoderDecoderModel的输入参数
-class ViTEncoderWrapper(ViTModel):
-    def __init__(self, config):
-        super().__init__(config)
-    
-    def forward(self, pixel_values=None, input_ids=None, attention_mask=None, inputs_embeds=None, **kwargs):   
-        return super().forward(pixel_values=pixel_values, **{k: v for k, v in kwargs.items() if k in ['head_mask', 'output_attentions', 'output_hidden_states', 'return_dict']})
+from utils.data_utils import convert_img_to_bytes, create_preprocess_transform
+from peft import get_peft_model, LoraConfig, TaskType
 
 # 配置
 class config:
@@ -46,15 +41,15 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# 分别为encoder和decoder准备tokenizer/feature_extractor
-feature_extractor = ViTFeatureExtractor.from_pretrained(config.ENCODER)  # 用于图片特征提取
+# 分别为encoder和decoder准备tokenizer
+encoder_tokenizer = AutoTokenizer.from_pretrained(config.ENCODER)  # 用于JPEG比特流tokenize
 decoder_tokenizer = AutoTokenizer.from_pretrained(config.DECODER)  # 用于caption tokenize
 decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
 
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/vit-gpt2-captioning")
+parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-captioning")
 parser.add_argument('--train_batch_size', type=int, default=8)
 parser.add_argument('--eval_batch_size', type=int, default=8)
 parser.add_argument('--eval_strategy', type=str, default="epoch")
@@ -80,13 +75,15 @@ df = pd.read_csv(csv_path)
 train_df, val_df = train_test_split(df, test_size=0.2, random_state=42)
 val_df = val_df.head(100)
 
-class ImgDataset(Dataset):
-    def __init__(self, df, root_dir, feature_extractor, decoder_tokenizer, max_length=50):
+class JpegBytesDataset(Dataset):
+    def __init__(self, df, root_dir, encoder_tokenizer, decoder_tokenizer, max_length=2000, image_size=224, bit_flip_prob=0.0):
         self.df = df.reset_index(drop=True)
         self.root_dir = root_dir
-        self.feature_extractor = feature_extractor
+        self.encoder_tokenizer = encoder_tokenizer
         self.decoder_tokenizer = decoder_tokenizer
         self.max_length = max_length
+        self.transform = create_preprocess_transform(image_size)
+        self.bit_flip_prob = bit_flip_prob
 
     def __len__(self):
         return len(self.df)
@@ -96,43 +93,48 @@ class ImgDataset(Dataset):
         image = self.df.image.iloc[idx]
         img_path = os.path.join(self.root_dir, image)
         img = Image.open(img_path).convert("RGB")
-        
-        # 使用ViTFeatureExtractor处理图片
-        pixel_values = self.feature_extractor(img, return_tensors="pt").pixel_values.squeeze()
-        
-        # 处理caption
+        img = self.transform(img)
+        jpeg_str = convert_img_to_bytes(img, bit_flip_prob=self.bit_flip_prob)
+        input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
+        input_ids = input_ids[:self.max_length] + [self.encoder_tokenizer.pad_token_id] * max(0, self.max_length - len(input_ids))
         labels = self.decoder_tokenizer(
             caption,
             padding='max_length',
-            max_length=self.max_length,
+            max_length=50,
             truncation=True
         ).input_ids
         labels = [token if token != self.decoder_tokenizer.pad_token_id else -100 for token in labels]
-        return {"pixel_values": pixel_values, "labels": torch.tensor(labels)}
+        return {"input_ids": torch.tensor(input_ids), "labels": torch.tensor(labels)}
 
-train_dataset = ImgDataset(
-    train_df, img_root, feature_extractor, decoder_tokenizer,
-    max_length=50
+train_dataset = JpegBytesDataset(
+    train_df, img_root, encoder_tokenizer, decoder_tokenizer,
+    image_size=args.image_size,
+    bit_flip_prob=args.bit_flip_prob,
+    max_length=args.max_length
 )
-val_dataset = ImgDataset(
-    val_df, img_root, feature_extractor, decoder_tokenizer,
-    max_length=50
+val_dataset = JpegBytesDataset(
+    val_df, img_root, encoder_tokenizer, decoder_tokenizer,
+    image_size=args.image_size,
+    bit_flip_prob=args.bit_flip_prob,
+    max_length=args.max_length
 )
 
 
-# 构建EncoderDecoderModel，使用ViT作为encoder
+# 构建EncoderDecoderModel，使用ViTEncoderWrapper
 
 gpt2_config = GPT2Config.from_pretrained(config.DECODER)
 gpt2_config.add_cross_attention = True
 gpt2 = GPT2LMHeadModel.from_pretrained(config.DECODER, config=gpt2_config)
-encoder = ViTEncoderWrapper.from_pretrained(config.ENCODER)
+# 用JpegLMEncoder作为encoder
+encoder = create_jpeglm_encoder(config.ENCODER)
 model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
 # 只设置结构/训练相关参数
 model.config.decoder_start_token_id = decoder_tokenizer.bos_token_id
 model.config.pad_token_id = decoder_tokenizer.pad_token_id
 model.config.eos_token_id = decoder_tokenizer.eos_token_id
 model.config.vocab_size = model.config.decoder.vocab_size
-model.main_input_name = "pixel_values"  # 设置主输入名称为pixel_values
+model.main_input_name = "input_ids"
+
 # 使用新版transformers的GenerationConfig
 generation_config = GenerationConfig(
     max_length=18,
@@ -218,6 +220,29 @@ trainer = MySeq2SeqTrainer(
     compute_metrics=compute_metrics
 )
 
+from peft import get_peft_model, LoraConfig, TaskType
+
+
+# 先开启梯度检查点
+model.gradient_checkpointing_enable()
+model.to(device)
+
+# LoRA配置
+lora_config = LoraConfig(
+    task_type=TaskType.SEQ_2_SEQ_LM,
+    inference_mode=False,
+    r=8,  # 可调
+    lora_alpha=32,  # 可调
+    target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",  # encoder/decoder常见
+        "gate_proj", "up_proj", "down_proj",
+        "c_attn", "c_proj", "c_fc", "q_attn"
+    ],
+    lora_dropout=0.1
+)
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()
+
 trainer.train()
 trainer.save_model()
 
@@ -225,9 +250,13 @@ trainer.save_model()
 # 生成样例
 def generate_caption(image_path):
     img = Image.open(image_path).convert("RGB")
-    pixel_values = feature_extractor(img, return_tensors="pt").pixel_values.to(model.device)
+    img = create_preprocess_transform(args.image_size)(img)
+    jpeg_str = convert_img_to_bytes(img, bit_flip_prob=args.bit_flip_prob)
+    input_ids = [encoder_tokenizer.bos_token_id] + encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
+    input_ids = input_ids[:args.max_length] + [encoder_tokenizer.pad_token_id] * max(0, args.max_length - len(input_ids))
+    input_ids = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0).to(model.device)
     generated_ids = model.generate(
-        inputs=pixel_values,
+        inputs=input_ids,
         generation_config=generation_config,
     )
     generated_caption = decoder_tokenizer.decode(generated_ids[0], skip_special_tokens=True)

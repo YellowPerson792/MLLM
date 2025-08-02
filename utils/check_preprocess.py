@@ -1,13 +1,11 @@
 # Example commands:
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --image_size 96 
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset mnist --image_size 96 
-# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset flickr8k --image_size 96 
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset imagenet100 --image_size 256 
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset imagenette --image_size 256
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --filter --filter_threshold 3600 --image_size 96 --jpeg_quality 25
-# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset mnist --bit_flip --bit_flip_prob 0.005 --image_size 96 --jpeg_quality 25
 # python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset cifar10 --bit_flip --bit_flip_prob 0.001 --image_size 96 --jpeg_quality 25
-
+# python /root/autodl-tmp/MLLM/utils/check_preprocess.py --dataset mnist --bit_flip --bit_flip_prob 0.005 --image_size 96 --jpeg_quality 25
 
 import os
 import argparse
@@ -255,7 +253,7 @@ if args.dataset == 'flickr8k':
         print(f"样本的最小实际 token 长度: {min_len}")
         print(f"样本的实际 token 长度标准差: {std_len:.2f}")
         # 统计token长度分布
-        step_size = 200
+        step_size = 1000
         center = int(avg_len)
         left_range = center - min_len
         right_range = max_len - center
@@ -386,9 +384,7 @@ if lengths_2000:
                 print(f"  类别 {label}: 无样本")
     
     # 统计各token长度区间的样本比例
-    if args.dataset == 'flickr8k':
-        step_size = 200
-    elif args.dataset == 'imagenet100':
+    if args.dataset in ['imagenet100', 'flickr8k']:
         step_size = 1000
     else:  # mnist、cifar10和imagenette
         step_size = 200
