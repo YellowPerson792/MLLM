@@ -1,4 +1,6 @@
 checkpoints/
+*checkpoint*/
+**/*checkpoint*/
 __pycache__/
 .ipynb_checkpoints/
 huggingface_token
