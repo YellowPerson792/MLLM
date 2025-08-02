@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python ImageCaption/train_vit-gpt2_cls.py --train_batch_size 8 --eval_batch_size 8 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --warmup_steps 512 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 1 --report_to None --num_train_samples 6000 --num_eval_samples 100
+# python ImageCaption/train_vit-gpt2_cls.py --train_batch_size 8 --eval_batch_size 8 --eval_strategy steps --eval_steps 128 --logging_steps 128 --save_steps 512 --learning_rate 5e-5 --num_train_epochs 3 --save_total_limit 1 --lr_scheduler_type linear --gradient_accumulation_steps 1 --report_to None --num_train_samples 6000 --num_eval_samples 16
 
 import sys
 import os
@@ -241,9 +241,15 @@ my_args = MySeq2SeqTrainingArguments(
 
 # ====== 使用LoRA进行参数高效训练 ======
 # 自动收集所有decoder.transformer.h的子模块名
-h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+# h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+h_modules = []
 modules_to_save = h_modules + [
-    "decoder.transformer.ln_f",
+    # "decoder.transformer.ln_f",
+    "mlp.c_fc",
+    "mlp.c_proj",
+    "crossattention.q_attn",
+    "crossattention.c_attn",
+    "crossattention.c_proj",
     "decoder.lm_head",
     "enc_to_dec_proj"
 ]

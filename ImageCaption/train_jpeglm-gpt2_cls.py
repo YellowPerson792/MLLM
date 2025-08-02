@@ -302,9 +302,14 @@ my_args = MySeq2SeqTrainingArguments(
 
 
 # 自动收集所有decoder.transformer.h的子模块名
-h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+# h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+h_modules = []
 modules_to_save = h_modules + [
-    "decoder.transformer.ln_f",
+    "mlp.c_fc",
+    "mlp.c_proj",
+    "crossattention.q_attn",
+    "crossattention.c_attn",
+    "crossattention.c_proj",
     "decoder.lm_head",
     "enc_to_dec_proj"
 ]
@@ -317,7 +322,6 @@ lora_config = LoraConfig(
         # 通用的attention和MLP模块名，应该能匹配到encoder中的模块
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
         "gate_proj", "up_proj", "down_proj",     # MLP层
-        "fc1", "fc2", "dense"                    # 其他可能的线性层
     ],
     modules_to_save=modules_to_save,
     lora_dropout=0.1
