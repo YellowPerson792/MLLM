@@ -1,5 +1,6 @@
+
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16 --seed 42
 
 import sys
 import os
@@ -15,7 +16,7 @@ from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder_cls_model
 from utils.data_utils import convert_img_to_bytes, create_preprocess_transform
 from peft import get_peft_model, LoraConfig, TaskType
 import argparse
-from datasets import load_dataset
+from datasets import load_dataset, set_seed
 import torch.nn.functional as F
 
 # ====== 引入自定义Trainer和训练参数 ======
@@ -23,7 +24,7 @@ from ImageCaption.hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArg
 
 # 配置
 class config:
-    ENCODER = "/root/autodl-fs/models/jpeg-lm"
+    ENCODER = "/root/autodl-tmp/MLLM/models/jpeg-lm"
     NUM_CLASSES = 10
 
 os.environ["WANDB_DISABLED"] = "true"
@@ -35,6 +36,7 @@ encoder_tokenizer = AutoTokenizer.from_pretrained(config.ENCODER)
 
 
 # 命令行参数与train_jpeglm-gpt2_cls.py保持一致
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/jpeglm-enc-mnist-classification")
 parser.add_argument('--train_batch_size', type=int, default=8)
@@ -58,7 +60,18 @@ parser.add_argument('--max_length', type=int, default=1024, help='JPEG比特流t
 parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='从指定checkpoint恢复训练状态（不是预训练权重）')
 parser.add_argument('--num_train_samples', type=int, default=6000, help='用于训练的样本数')
 parser.add_argument('--num_eval_samples', type=int, default=1000, help='用于评估的样本数')
+parser.add_argument('--seed', type=int, default=42, help='随机种子，保证训练可复现')
 args = parser.parse_args()
+
+# 设置随机种子，保证训练可复现
+import random
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+set_seed(args.seed)
 
 # 数据集
 print("正在加载MNIST数据集...")
@@ -126,7 +139,6 @@ lora_config = LoraConfig(
     target_modules=[
         "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj",
-        "fc1", "fc2", "dense"
     ],
     modules_to_save=[
         "classifier"
@@ -143,24 +155,6 @@ for name, param in model.named_parameters():
     print(f"{name:80} requires_grad={param.requires_grad}")
 model.print_trainable_parameters()
 print("==== END ====")
-
-# 训练与评估
-def evaluate(model, dataloader):
-    model.eval()
-    correct, total = 0, 0
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Evaluating"):
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-            logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
-            preds = logits.argmax(dim=-1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-    acc = correct / total
-    print(f"Eval Accuracy: {acc:.4f}")
-    return acc
-
 
 # ====== 自定义训练参数 ======
 my_args = MySeq2SeqTrainingArguments(

@@ -1,5 +1,6 @@
+
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16 --seed 42
 
 import sys
 import os
@@ -16,6 +17,7 @@ from torchvision import transforms as T
 from transformers import EncoderDecoderModel, GPT2LMHeadModel, ViTFeatureExtractor, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, default_data_collator, GenerationConfig, GPT2Config
 from torch.nn.utils.rnn import pad_sequence
 from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder
+from datasets import set_seed
 from sklearn.model_selection import train_test_split
 import datasets
 import multiprocessing as mp
@@ -24,7 +26,7 @@ from peft import get_peft_model, LoraConfig, TaskType, PeftModel
 
 # 配置
 class config:
-    ENCODER = "/root/autodl-fs/models/jpeg-lm"
+    ENCODER = "/root/autodl-tmp/MLLM/models/jpeg-lm"
     DECODER = "gpt2"
     SEED = 42
     MAX_LEN = 1
@@ -49,6 +51,7 @@ decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
 
 import argparse
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-mnist-classification")
 parser.add_argument('--train_batch_size', type=int, default=8)
@@ -72,7 +75,18 @@ parser.add_argument('--max_length', type=int, default=1024, help='JPEG比特流t
 parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='从指定checkpoint恢复训练状态（不是预训练权重）')
 parser.add_argument('--num_train_samples', type=int, default=6000, help='用于训练的样本数')
 parser.add_argument('--num_eval_samples', type=int, default=1000, help='用于评估的样本数')
+parser.add_argument('--seed', type=int, default=42, help='随机种子，保证训练可复现')
 args = parser.parse_args()
+
+# 设置随机种子，保证训练可复现
+import random
+random.seed(args.seed)
+np.random.seed(args.seed)
+torch.manual_seed(args.seed)
+torch.cuda.manual_seed_all(args.seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+set_seed(args.seed)
 
 
 # 数据集 - 使用MNIST数据集
@@ -155,15 +169,11 @@ val_dataset = MNISTJpegBytesDataset(
 def dynamic_pad_collate_fn(batch):
     input_ids = [item["input_ids"] for item in batch]
     labels = [item["labels"] for item in batch]
-    # pad到本batch最大长度
     input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=encoder_tokenizer.pad_token_id)
     labels_padded = pad_sequence(labels, batch_first=True, padding_value=-100)
-    # attention_mask: 1 for non-pad, 0 for pad
     attention_mask = (input_ids_padded != encoder_tokenizer.pad_token_id).long()
     return {"input_ids": input_ids_padded, "attention_mask": attention_mask, "labels": labels_padded}
 
-
-# 构建EncoderDecoderModel，使用ViTEncoderWrapper
 
 gpt2_config = GPT2Config.from_pretrained(config.DECODER)
 gpt2_config.add_cross_attention = True
@@ -303,16 +313,11 @@ my_args = MySeq2SeqTrainingArguments(
 
 # 自动收集所有decoder.transformer.h的子模块名
 # h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
-h_modules = []
-modules_to_save = h_modules + [
-    "mlp.c_fc",
-    "mlp.c_proj",
-    "crossattention.q_attn",
-    "crossattention.c_attn",
-    "crossattention.c_proj",
-    "decoder.lm_head",
-    "enc_to_dec_proj"
-]
+# modules_to_save = h_modules + [
+#     "decoder.transformer.ln_f",
+#     "decoder.lm_head",
+#     "enc_to_dec_proj"
+# ]
 lora_config = LoraConfig(
     task_type=TaskType.SEQ_2_SEQ_LM,
     inference_mode=False,
@@ -322,8 +327,18 @@ lora_config = LoraConfig(
         # 通用的attention和MLP模块名，应该能匹配到encoder中的模块
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
         "gate_proj", "up_proj", "down_proj",     # MLP层
+        # — GPT-2 Decoder Self-Attention (c_attn 包含 Q/K/V)
+        "attn.c_attn",                     # slice 出 q_proj/v_proj
+        # — GPT-2 Decoder Cross-Attention
+        "crossattention.q_attn",           # decoder→encoder 的 query
+        "crossattention.c_attn",           # encoder 输出做 key/value
+        # — GPT-2 Decoder MLP
+        "mlp.c_fc",                        # up_proj / gate_proj
+        "mlp.c_proj",                      # down_proj
+        # （可选）如果想针对输出投影再加一次 LoRA：
+        "attn.c_proj",                     # self-attention 最后一段投影
     ],
-    modules_to_save=modules_to_save,
+    # modules_to_save=modules_to_save,
     lora_dropout=0.1
 )
 
@@ -344,7 +359,6 @@ trainer = MySeq2SeqTrainer(
     args=my_args,
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
-    tokenizer=decoder_tokenizer,
     compute_metrics=compute_metrics,
     data_collator=dynamic_pad_collate_fn
 )
