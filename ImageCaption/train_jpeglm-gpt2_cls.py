@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import sys
 import os
@@ -51,27 +51,27 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-mnist-classification")
-parser.add_argument('--train_batch_size', type=int, default=2)
-parser.add_argument('--eval_batch_size', type=int, default=2)
-parser.add_argument('--eval_strategy', type=str, default="steps")
+parser.add_argument('--train_batch_size', type=int, default=8)
+parser.add_argument('--eval_batch_size', type=int, default=8)
+parser.add_argument('--eval_strategy', type=str, default="epoch")
 parser.add_argument('--eval_steps', type=int, default=128)
-parser.add_argument('--logging_steps', type=int, default=64)
-parser.add_argument('--save_steps', type=int, default=512)
-parser.add_argument('--warmup_steps', type=int, default=512)
-parser.add_argument('--learning_rate', type=float, default=2e-4)
+parser.add_argument('--logging_steps', type=int, default=128)
+parser.add_argument('--save_steps', type=int, default=128)
+parser.add_argument('--warmup_steps', type=int, default=0)
+parser.add_argument('--learning_rate', type=float, default=5e-5)
 parser.add_argument('--num_train_epochs', type=int, default=3)
-parser.add_argument('--save_total_limit', type=int, default=6)
+parser.add_argument('--save_total_limit', type=int, default=1)
 parser.add_argument('--lr_scheduler_type', type=str, default="linear")
-parser.add_argument('--gradient_accumulation_steps', type=int, default=8)
-parser.add_argument('--report_to', type=str, default="none")
+parser.add_argument('--gradient_accumulation_steps', type=int, default=1)
+parser.add_argument('--report_to', type=str, default=None)
 parser.add_argument('--fp16', action='store_true')
 parser.add_argument('--bf16', action='store_true')
-parser.add_argument('--image_size', type=int, default=96, help='输入图片resize的边长')
+parser.add_argument('--image_size', type=int, default=28, help='输入图片resize的边长')
 parser.add_argument('--bit_flip_prob', type=float, default=0.0, help='JPEG比特流随机翻转概率')
 parser.add_argument('--max_length', type=int, default=1024, help='JPEG比特流token序列最大长度')
 parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='从指定checkpoint恢复训练状态（不是预训练权重）')
 parser.add_argument('--num_train_samples', type=int, default=6000, help='用于训练的样本数')
-parser.add_argument('--num_eval_samples', type=int, default=16, help='用于评估的样本数')
+parser.add_argument('--num_eval_samples', type=int, default=1000, help='用于评估的样本数')
 args = parser.parse_args()
 
 
@@ -97,99 +97,6 @@ digit_to_text = {
     5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"
 }
 
-# ====== TinyDecoder词表和模块 ======
-tiny_vocab = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
-word2id = {w: i for i, w in enumerate(tiny_vocab)}
-id2word = {i: w for i, w in enumerate(tiny_vocab)}
-
-import torch.nn as nn
-from transformers import PreTrainedModel, PretrainedConfig
-from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions, CausalLMOutputWithCrossAttentions
-
-class TinyDecoderConfig(PretrainedConfig):
-    model_type = "tiny_decoder"  # 添加model_type
-    
-    def __init__(self, vocab_size=10, hidden_size=4096, num_layers=1, num_heads=2, **kwargs):
-        super().__init__(**kwargs)
-        self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-
-class TinyTransformerDecoder(PreTrainedModel):
-    config_class = TinyDecoderConfig
-
-    def __init__(self, config):
-        super().__init__(config)
-        self.embedding = nn.Embedding(config.vocab_size, config.hidden_size)
-        # 自注意力层
-        self.self_attn = nn.MultiheadAttention(config.hidden_size, config.num_heads, batch_first=True)
-        # 跨注意力层
-        self.cross_attn = nn.MultiheadAttention(config.hidden_size, config.num_heads, batch_first=True)
-        # 前馈层
-        self.linear1 = nn.Linear(config.hidden_size, config.hidden_size * 2)
-        self.linear2 = nn.Linear(config.hidden_size * 2, config.hidden_size)
-        self.norm1 = nn.LayerNorm(config.hidden_size)
-        self.norm2 = nn.LayerNorm(config.hidden_size)
-        self.norm3 = nn.LayerNorm(config.hidden_size)
-        self.dropout = nn.Dropout(0.1)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size)
-
-    def forward(self, input_ids=None, encoder_hidden_states=None, attention_mask=None, encoder_attention_mask=None, labels=None, inputs_embeds=None, return_dict=None, **kwargs):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        # 处理输入
-        if inputs_embeds is None:
-            if input_ids is None:
-                raise ValueError("You have to specify either input_ids or inputs_embeds")
-            x = self.embedding(input_ids)
-        else:
-            x = inputs_embeds
-
-        # 自注意力
-        attn_output, _ = self.self_attn(x, x, x, attn_mask=None)
-        x = self.norm1(x + self.dropout(attn_output))
-
-        # 跨注意力（encoder_hidden_states作为memory）
-        if encoder_hidden_states is not None:
-            # MultiheadAttention的key_padding_mask格式：True表示需要屏蔽的位置
-            # 但encoder_attention_mask通常是：1表示有效，0表示pad
-            # 所以需要取反：将0(pad)转为True(屏蔽)，1(有效)转为False(不屏蔽)
-            key_mask = None
-            if encoder_attention_mask is not None:
-                key_mask = (encoder_attention_mask == 0)  # 0->True(屏蔽), 1->False(不屏蔽)
-            
-            cross_attn_output, _ = self.cross_attn(
-                x, encoder_hidden_states, encoder_hidden_states,
-                attn_mask=None,
-                key_padding_mask=key_mask
-            )
-            x = self.norm2(x + self.dropout(cross_attn_output))
-
-        # 前馈
-        ff_output = self.linear2(self.dropout(torch.relu(self.linear1(x))))
-        x = self.norm3(x + self.dropout(ff_output))
-
-        logits = self.lm_head(x)
-
-        loss = None
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
-
-        if not return_dict:
-            output = (logits,)
-            return ((loss,) + output) if loss is not None else output
-
-        return CausalLMOutputWithCrossAttentions(
-            loss=loss,
-            logits=logits,
-            past_key_values=None,
-            hidden_states=None,
-            attentions=None,
-            cross_attentions=None,
-        )
-
 class MNISTJpegBytesDataset(Dataset):
     def __init__(self, hf_dataset, encoder_tokenizer, decoder_tokenizer, digit_to_text, max_length=1024, image_size=28, bit_flip_prob=0.0):
         self.dataset = hf_dataset
@@ -208,17 +115,27 @@ class MNISTJpegBytesDataset(Dataset):
         # MNIST数据格式: {'image': PIL_image, 'label': int}
         label = item['label']
         caption = self.digit_to_text[label]  # 根据数字标签生成文本
+        
         # 处理图像
         img = item['image'].convert("RGB")  # MNIST原本是灰度图，转为RGB
         img = self.transform(img)
+        
         # 将图像转换为JPEG字节流
         jpeg_str = convert_img_to_bytes(img, bit_flip_prob=self.bit_flip_prob)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
+        
+        # 截断到max_length，但不进行padding，让collate_fn来处理
         input_ids = input_ids[:self.max_length]
-        # 处理标签文本（只用tiny_vocab）
-        label_id = word2id[caption]
-        labels = torch.tensor([label_id])  # 只输出一个token
-        return {"input_ids": torch.tensor(input_ids), "labels": labels}
+        
+        # 处理标签文本
+        labels = self.decoder_tokenizer(
+            caption,
+            max_length=20,  # 分类文本较短，减少最大长度
+            truncation=True
+        ).input_ids
+        labels = [token if token != self.decoder_tokenizer.pad_token_id else -100 for token in labels]
+        
+        return {"input_ids": torch.tensor(input_ids), "labels": torch.tensor(labels)}
 
 
 train_dataset = MNISTJpegBytesDataset(
@@ -248,33 +165,30 @@ def dynamic_pad_collate_fn(batch):
 
 # 构建EncoderDecoderModel，使用ViTEncoderWrapper
 
-# 注册自定义配置类到AutoConfig
-from transformers import AutoConfig
-AutoConfig.register("tiny_decoder", TinyDecoderConfig)
-
+gpt2_config = GPT2Config.from_pretrained(config.DECODER)
+gpt2_config.add_cross_attention = True
+gpt2 = GPT2LMHeadModel.from_pretrained(config.DECODER, config=gpt2_config)
 # 用JpegLMEncoder作为encoder
 encoder = create_jpeglm_encoder_with_pooling(config.ENCODER, pooling_strategy='last')
-# TinyDecoder
-tiny_config = TinyDecoderConfig(vocab_size=len(tiny_vocab))
-tiny_decoder = TinyTransformerDecoder(tiny_config)
-model = JpegLMEncoderDecoderModelWithPooling(encoder=encoder, decoder=tiny_decoder)
+model = JpegLMEncoderDecoderModelWithPooling(encoder=encoder, decoder=gpt2)
+# model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
 
-# 设置结构/训练相关参数
-model.config.decoder_start_token_id = 0
-model.config.pad_token_id = decoder_tokenizer.pad_token_id if decoder_tokenizer.pad_token_id is not None else 0  # pad_token_id必须为正整数
-model.config.eos_token_id = None
-model.config.vocab_size = len(tiny_vocab)
+# 只设置结构/训练相关参数
+model.config.decoder_start_token_id = decoder_tokenizer.bos_token_id
+model.config.pad_token_id = decoder_tokenizer.pad_token_id
+model.config.eos_token_id = decoder_tokenizer.eos_token_id
+model.config.vocab_size = model.config.decoder.vocab_size
 model.main_input_name = "input_ids"
 
-# GenerationConfig（只生成1个token）
-# 只在GenerationConfig中定义bos_token_id，让generate方法自动处理
+# 使用新版transformers的GenerationConfig
 generation_config = GenerationConfig(
     max_new_tokens=1,
     num_beams=1,
-    decoder_start_token_id = 0,
-    bos_token_id=0,  # 明确指定BOS token为0（对应"zero"）
-    pad_token_id=model.config.pad_token_id,
-    eos_token_id=None,
+    no_repeat_ngram_size=3,
+    decoder_start_token_id=model.config.decoder_start_token_id,
+    bos_token_id=decoder_tokenizer.bos_token_id,
+    pad_token_id=decoder_tokenizer.pad_token_id,
+    eos_token_id=decoder_tokenizer.eos_token_id,
 )
 model.generation_config = generation_config
 
@@ -287,49 +201,25 @@ rouge = evaluate.load("rouge")
 def compute_metrics(pred):
     labels_ids = pred.label_ids
     pred_ids = pred.predictions
+    # 动态pad到同一长度
+    import torch
+    from torch.nn.utils.rnn import pad_sequence
+    # 转为list of tensor
+    labels_ids = [torch.tensor(x) for x in labels_ids]
+    pred_ids = [torch.tensor(x) for x in pred_ids]
+    # pad
+    labels_ids = pad_sequence(labels_ids, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
+    pred_ids = pad_sequence(pred_ids, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
+    # decode
+    pred_str = decoder_tokenizer.batch_decode(pred_ids.tolist(), skip_special_tokens=True)
+    labels_ids[labels_ids == -100] = decoder_tokenizer.pad_token_id
+    label_str = decoder_tokenizer.batch_decode(labels_ids.tolist(), skip_special_tokens=True)
     
-    # 转换为numpy数组以便处理
-    pred_ids = np.array(pred_ids)
-    labels_ids = np.array(labels_ids)
-    
-    # debug输出原始数据
-    print("[DEBUG] labels_ids shape:", labels_ids.shape)
-    print("[DEBUG] pred_ids shape:", pred_ids.shape)
-    print("[DEBUG] labels_ids sample:", labels_ids[:3].tolist() if len(labels_ids) > 0 else [])
-    print("[DEBUG] pred_ids sample:", pred_ids[:3].tolist() if len(pred_ids) > 0 else [])
-    
-    # 计算分类准确率 - 直接使用我们的tiny_vocab
+    # 计算分类准确率
     correct = 0
     total = 0
-    
-    # 处理预测结果：pred_ids是logits，需要取argmax
-    if len(pred_ids.shape) == 3:  # (batch_size, seq_len, vocab_size)
-        pred_token_ids = np.argmax(pred_ids, axis=-1)  # 取最大概率的token
-    else:
-        pred_token_ids = pred_ids
-    
-    for pred_batch, label_batch in zip(pred_token_ids, labels_ids):
-        # 如果有BOS+类别，取第二个token；否则取第一个
-        if len(pred_batch) > 1:
-            pred_token_id = pred_batch[1]
-        elif len(pred_batch) > 0:
-            pred_token_id = pred_batch[0]
-        else:
-            pred_token_id = -1
-        pred_text = id2word.get(pred_token_id, f"UNKNOWN_{pred_token_id}")
-        
-        # 处理标签（去除-100）
-        valid_labels = [l for l in label_batch if l != -100]
-        if len(valid_labels) > 0:
-            label_token_id = valid_labels[0] 
-            label_text = id2word.get(label_token_id, f"UNKNOWN_{label_token_id}")
-        else:
-            label_token_id = -1
-            label_text = "EMPTY"
-            
-        print(f"[DEBUG] pred_token_id: {pred_token_id} -> {pred_text}, label_token_id: {label_token_id} -> {label_text}")
-        
-        # 提取数字进行比较
+    for pred_text, label_text in zip(pred_str, label_str):
+        # 从生成的文本中提取数字
         pred_digit = extract_digit_from_text(pred_text)
         label_digit = extract_digit_from_text(label_text)
         
@@ -340,21 +230,6 @@ def compute_metrics(pred):
     
     accuracy = correct / total if total > 0 else 0.0
     
-    # 为了兼容性，也计算基于GPT-2 tokenizer的文本指标（但主要看accuracy）
-    # 动态pad到同一长度
-    import torch
-    from torch.nn.utils.rnn import pad_sequence
-    labels_ids_tensor = [torch.tensor(x) for x in labels_ids]
-    pred_ids_for_decode = np.argmax(pred_ids, axis=-1) if len(pred_ids.shape) == 3 else pred_ids
-    pred_ids_tensor = [torch.tensor(x) for x in pred_ids_for_decode]
-    # pad
-    labels_ids_padded = pad_sequence(labels_ids_tensor, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
-    pred_ids_padded = pad_sequence(pred_ids_tensor, batch_first=True, padding_value=decoder_tokenizer.pad_token_id)
-    # decode
-    pred_str = decoder_tokenizer.batch_decode(pred_ids_padded.tolist(), skip_special_tokens=True)
-    labels_ids_padded[labels_ids_padded == -100] = decoder_tokenizer.pad_token_id
-    label_str = decoder_tokenizer.batch_decode(labels_ids_padded.tolist(), skip_special_tokens=True)
-
     # 计算传统的文本生成指标
     rouge_output = rouge.compute(predictions=pred_str, references=label_str, rouge_types=["rouge2"])["rouge2"]
     bleu_1_scores = []
@@ -369,7 +244,7 @@ def compute_metrics(pred):
         bleu_4_scores.append(bleu_4)
     
     return {
-        "accuracy": round(accuracy, 4),
+        "accuracy": round(accuracy, 4),  # 新增分类准确率
         "rouge2_fmeasure": round(rouge_output, 4),
         "bleu1": round(np.mean(bleu_1_scores), 4),
         "bleu4": round(np.mean(bleu_4_scores), 4),
@@ -418,63 +293,48 @@ my_args = MySeq2SeqTrainingArguments(
     bf16=args.bf16
 )
 
+# ====== 只训练cross-attention层，其余参数全部冻结 ======
+# for name, param in model.named_parameters():
+#     # cross-attention层名一般包含"crossattention"或"cross_attention"
+#     if ("crossattention" in name.lower()) or ("cross_attention" in name.lower()):
+#         param.requires_grad = True
+#     else:
+#         param.requires_grad = False
+# print("仅训练cross-attention层，其余参数已冻结。")
+
 
 # 自动收集所有decoder.transformer.h的子模块名
-# h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
-# modules_to_save = h_modules + [
-#     "decoder.transformer.ln_f",
-#     "decoder.lm_head",
-#     "enc_to_dec_proj"
-# ]
+h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+modules_to_save = h_modules + [
+    "decoder.transformer.ln_f",
+    "decoder.lm_head",
+    "enc_to_dec_proj"
+]
 lora_config = LoraConfig(
     task_type=TaskType.SEQ_2_SEQ_LM,
     inference_mode=False,
     r=8,  # 可调
     lora_alpha=32,  # 可调
     target_modules=[
-        # Encoder中的线性层 (JpegLM相关)
+        # 通用的attention和MLP模块名，应该能匹配到encoder中的模块
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
-        "gate_proj", "up_proj", "down_proj",     # MLP层  
+        "gate_proj", "up_proj", "down_proj",     # MLP层
+        "fc1", "fc2", "dense"                    # 其他可能的线性层
     ],
-    modules_to_save=[
-        # TinyTransformerDecoder所有层
-        "decoder.embedding",
-        "decoder.self_attn",
-        "decoder.cross_attn",
-        "decoder.linear1",
-        "decoder.linear2",
-        "decoder.norm1",
-        "decoder.norm2",
-        "decoder.norm3",
-        "decoder.dropout",
-        "decoder.lm_head",
-        # 保存投影层
-        "enc_to_dec_proj",
-    ],
-    lora_dropout=0.1,
+    modules_to_save=modules_to_save,
+    lora_dropout=0.1
 )
 
 # 开启梯度检查点
 model.gradient_checkpointing_enable()
 model = get_peft_model(model, lora_config)
 
-print("✓ 已应用LoRA配置，将微调encoder和decoder的全部层")
 
-# 打印LoRA训练参数统计
-print("\n==== LoRA训练参数统计 ====")
-model.print_trainable_parameters()
-
-# 详细打印各层参数状态
+# 打印所有参数的requires_grad状态
 print("\n==== 各层参数 requires_grad 状态 ====")
-trainable_params = 0
-total_params = 0
 for name, param in model.named_parameters():
-    total_params += param.numel()
-    if param.requires_grad:
-        trainable_params += param.numel()
-        print(f"{name:80} requires_grad={param.requires_grad} ({param.numel():,} params)")
-
-print(f"\n总训练参数: {trainable_params:,} / {total_params:,} ({100 * trainable_params / total_params:.2f}%)")
+    print(f"{name:80} requires_grad={param.requires_grad}")
+model.print_trainable_parameters()
 print("==== END ====")
 
 trainer = MySeq2SeqTrainer(
@@ -501,23 +361,11 @@ def generate_classification_from_image(pil_image):
     input_ids = [encoder_tokenizer.bos_token_id] + encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
     input_ids = input_ids[:args.max_length] + [encoder_tokenizer.pad_token_id] * max(0, args.max_length - len(input_ids))
     input_ids = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0).to(model.device)
-
-    # 直接使用generate，GenerationConfig中的bos_token_id会自动处理起始token
     generated_ids = model.generate(
         inputs=input_ids,
         generation_config=generation_config,
     )
-
-    # 使用tiny_vocab来解码生成的token
-    if generated_ids.size(1) > 0:
-        token_id = generated_ids[0, 0].item()  # 只生成1个token，直接取第一个
-        if token_id < len(tiny_vocab):
-            generated_text = tiny_vocab[token_id]
-        else:
-            generated_text = f"unknown_token_{token_id}"
-    else:
-        generated_text = "no_prediction"
-
+    generated_text = decoder_tokenizer.decode(generated_ids[0], skip_special_tokens=True)
     return generated_text
 
 print("\n==== 生成分类样例 ====")

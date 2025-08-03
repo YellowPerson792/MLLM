@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 5 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import os
 import sys
@@ -60,21 +60,6 @@ encoder_tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/MLLM/models/
 decoder_tokenizer = AutoTokenizer.from_pretrained("gpt2")
 decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
 
-# 将tiny_vocab中的单词转换为GPT2 tokenizer中的token IDs
-gpt2_token_ids = {}
-for word in tiny_vocab:
-    token_ids = decoder_tokenizer.encode(word, add_special_tokens=False)
-    if len(token_ids) == 1:
-        gpt2_token_ids[word] = token_ids[0]
-    else:
-        print(f"警告: '{word}' 被tokenize为多个token: {token_ids}")
-        gpt2_token_ids[word] = token_ids[0]  # 取第一个token
-
-print("数字词汇到GPT2 token ID的映射:")
-for word, token_id in gpt2_token_ids.items():
-    decoded = decoder_tokenizer.decode([token_id])
-    print(f"  {word} -> token_id: {token_id}, decoded: '{decoded}'")
-
 gpt2_config = AutoConfig.from_pretrained("gpt2")
 gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
 
@@ -98,6 +83,55 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         self.proj = proj
         self.decoder_tokenizer = decoder_tokenizer
         self.bos_token_id = bos_token_id
+        # 强制绑定自定义generate方法，防止PEFT包裹后被覆盖
+        self.generate = self._custom_generate
+
+    def _custom_generate(self, input_ids=None, attention_mask=None, encoder_outputs=None, generation_config=None, max_length=10, **kwargs):
+        """
+        生成式分类方法，逐步生成文本序列
+        """
+        if generation_config is None:
+            generation_config = getattr(self, 'generation_config', None)
+        
+        # 从generation_config或kwargs中获取参数
+        if generation_config is not None:
+            max_new_tokens = getattr(generation_config, 'max_new_tokens', 5)
+            do_sample = getattr(generation_config, 'do_sample', False)
+        else:
+            max_new_tokens = kwargs.get('max_new_tokens', 5)
+            do_sample = kwargs.get('do_sample', False)
+            
+        with torch.no_grad():
+            if encoder_outputs is None:
+                encoder_outputs = self.encoder(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    return_dict=True,
+                )
+            encoder_hidden_states = self.proj(encoder_outputs.last_hidden_state)
+            prefix_embeds = encoder_hidden_states.unsqueeze(1)
+            batch_size = prefix_embeds.size(0)
+            device = prefix_embeds.device
+            generated_ids = torch.full((batch_size, 1), self.bos_token_id, device=device, dtype=torch.long)
+            for step in range(max_new_tokens):
+                current_embeds = self.decoder.transformer.wte(generated_ids)
+                full_embeds = torch.cat([prefix_embeds, current_embeds], dim=1)
+                # 避免变量名冲突，使用不同的变量名
+                full_attention_mask = torch.ones(full_embeds.size()[:2], device=device, dtype=torch.long)
+                decoder_outputs = self.decoder(
+                    inputs_embeds=full_embeds,
+                    attention_mask=full_attention_mask,
+                    return_dict=True
+                )
+                next_token_logits = decoder_outputs.logits[:, -1, :]
+                if do_sample:
+                    probs = torch.softmax(next_token_logits, dim=-1)
+                    next_token = torch.multinomial(probs, num_samples=1)
+                else:
+                    next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+                generated_ids = torch.cat([generated_ids, next_token], dim=1)
+                # 可选：提前终止逻辑可以在这里添加
+            return generated_ids[:, 1:]  # [batch, generated_length]
 
     def forward(
         self,
@@ -144,20 +178,34 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         # 取池化后的特征作为prefix，reshape为[batch, 1, hidden]
         prefix_embeds = encoder_hidden_states.unsqueeze(1)  # [batch, 1, hidden]
 
+        # 对于生成式分类，labels已经是token序列，直接使用
         if (labels is not None) and (decoder_input_ids is None and decoder_inputs_embeds is None):
+            # labels是文本对应的token序列，需要构造decoder input
             decoder_input_ids = self.prepare_decoder_input_ids_from_labels(labels)
             if decoder_attention_mask is None and decoder_input_ids is not None:
                 decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
 
-        # 如果有decoder_inputs_embeds，与prefix_embeds拼接
+        # 构造decoder的inputs_embeds
+        if decoder_input_ids is not None:
+            # 获取decoder input的embeddings
+            decoder_inputs_embeds = self.decoder.transformer.wte(decoder_input_ids)
+            
+        # 与prefix_embeds拼接
         if decoder_inputs_embeds is not None:
             final_inputs_embeds = torch.cat([prefix_embeds, decoder_inputs_embeds], dim=1)
+            # 相应地调整attention mask
+            if decoder_attention_mask is not None:
+                prefix_attention = torch.ones(prefix_embeds.size()[:2], device=prefix_embeds.device, dtype=decoder_attention_mask.dtype)
+                final_attention_mask = torch.cat([prefix_attention, decoder_attention_mask], dim=1)
+            else:
+                final_attention_mask = None
         else:
             final_inputs_embeds = prefix_embeds
+            final_attention_mask = torch.ones(prefix_embeds.size()[:2], device=prefix_embeds.device, dtype=torch.long)
 
         # Decode，确保不会同时传入input_ids和inputs_embeds
         decoder_args = {
-            'attention_mask': decoder_attention_mask,
+            'attention_mask': final_attention_mask,  # 修正为final_attention_mask
             'output_attentions': output_attentions,
             'output_hidden_states': output_hidden_states,
             'use_cache': use_cache,
@@ -173,17 +221,27 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
             decoder_args['input_ids'] = decoder_input_ids
         decoder_outputs = self.decoder(**decoder_args)
 
-        # Compute loss independent from decoder
+        # Compute loss for generation
         loss = None
         if labels is not None:
             logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
             loss_fct = CrossEntropyLoss()
-            # 对于分类任务，只计算第一个位置的loss
-            if logits.dim() == 3:  # [batch, seq_len, vocab_size]
-                first_token_logits = logits[:, 0, :]  # [batch, vocab_size]
-                loss = loss_fct(first_token_logits, labels.view(-1))
+            
+            # 对于生成式任务，计算所有位置的loss，但只关注label部分
+            # logits: [batch, prefix_len + label_len, vocab_size]
+            # labels: [batch, label_len]
+            
+            # 提取对应label部分的logits（跳过prefix部分）
+            prefix_len = 1  # prefix只有1个token
+            if logits.size(1) > prefix_len:
+                prediction_logits = logits[:, prefix_len:, :]  # [batch, label_len, vocab_size]
+                # 调整维度以计算loss
+                shift_logits = prediction_logits.contiguous().view(-1, prediction_logits.size(-1))
+                shift_labels = labels.contiguous().view(-1)
+                loss = loss_fct(shift_logits, shift_labels)
             else:
-                loss = loss_fct(logits.reshape(-1, self.decoder.config.vocab_size), labels.view(-1))
+                # 如果只有prefix，无法计算generation loss
+                loss = torch.tensor(0.0, device=logits.device, requires_grad=True)
 
         if not return_dict:
             if loss is not None:
@@ -219,11 +277,9 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
             self.encoder.embeddings = value
 
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
-        # 对于分类任务，labels是[batch_size]的一维张量，需要转换为[batch_size, 1]
+        # 对于生成式分类任务，labels已经是完整的文本token序列
         if labels is None:
             return None
-        if labels.dim() == 1:
-            labels = labels.unsqueeze(1)  # [batch_size] -> [batch_size, 1]
         
         # 确保config参数存在
         pad_token_id = getattr(self.config, 'pad_token_id', self.decoder_tokenizer.pad_token_id or self.decoder_tokenizer.unk_token_id)
@@ -283,10 +339,16 @@ class MNISTJpegBytesPrefixDataset(Dataset):
         jpeg_str = convert_img_to_bytes(img)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
         input_ids = input_ids[:self.max_length]
-        # 使用GPT2 tokenizer中的真实token ID
+        
+        # 对于生成式分类，返回完整的文本token序列
         caption = self.digit_to_text[label]
-        label_token_id = gpt2_token_ids[caption]
-        return {"input_ids": torch.tensor(input_ids), "label_id": torch.tensor(label_token_id)}
+        # 将文本编码为token序列
+        label_tokens = self.decoder_tokenizer.encode(caption, add_special_tokens=False)
+        
+        return {
+            "input_ids": torch.tensor(input_ids), 
+            "labels": torch.tensor(label_tokens)  # 现在是完整的token序列
+        }
 
 # 加载MNIST数据集
 mnist_dataset = load_dataset("ylecun/mnist")
@@ -298,11 +360,20 @@ val_dataset = MNISTJpegBytesPrefixDataset(test_data, encoder_tokenizer, decoder_
 
 def collate_fn(batch):
     input_ids = [item["input_ids"] for item in batch]
-    label_ids = [item["label_id"] for item in batch]
+    labels = [item["labels"] for item in batch]
+    
+    # Pad input_ids
     input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=encoder_tokenizer.pad_token_id)
     attention_mask = (input_ids_padded != encoder_tokenizer.pad_token_id).long()
-    label_ids = torch.stack(label_ids)
-    return {"input_ids": input_ids_padded, "attention_mask": attention_mask, "labels": label_ids}
+    
+    # Pad labels（文本token序列）
+    labels_padded = pad_sequence(labels, batch_first=True, padding_value=decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id)
+    
+    return {
+        "input_ids": input_ids_padded, 
+        "attention_mask": attention_mask, 
+        "labels": labels_padded
+    }
 
 # MySeq2SeqTrainer集成
 from hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArguments
@@ -313,36 +384,52 @@ model = PrefixLMForClassification(jpeglm_encoder, proj, gpt2_model, decoder_toke
 model.config.decoder_start_token_id = bos_token_id
 model.config.pad_token_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id
 
-def compute_metrics(pred):
-    labels = pred.label_ids  # [batch_size] - 包含GPT2 token IDs
-    preds = pred.predictions # [batch_size, seq_len, vocab_size] 或 [batch_size, seq_len]
-    
-    # 处理预测结果：如果是logits，取argmax；如果已经是token ids，直接使用
-    if len(preds.shape) == 3:  # logits: [batch_size, seq_len, vocab_size]
-        pred_token_ids = np.argmax(preds, axis=-1)  # [batch_size, seq_len]
-    else:  # token ids: [batch_size, seq_len]
-        pred_token_ids = preds
-    
-    # 取第1个位置的预测（现在序列长度为1）
-    if pred_token_ids.shape[1] > 0:
-        pred_tokens = pred_token_ids[:, 0]  # [batch_size]
-    else:
-        pred_tokens = np.zeros_like(labels)  # fallback
-    
-    # 计算准确率 - 比较GPT2 token IDs
-    correct = (pred_tokens == labels).sum()
-    total = len(labels)
+# 添加generation_config以支持生成式评估
+from transformers import GenerationConfig
+model.generation_config = GenerationConfig(
+    max_new_tokens=1,  # 数字词汇通常不超过5个token
+    do_sample=False,   # 使用贪心搜索
+    pad_token_id=model.config.pad_token_id,
+    eos_token_id=decoder_tokenizer.eos_token_id,
+    bos_token_id=bos_token_id,
+)
+
+def compute_metrics(pred): 
+
+    # 兼容list输入，统一转为numpy数组
+    labels = np.array(pred.label_ids)
+    preds = np.array(pred.predictions)
+
+    print(f"[DEBUG] Labels shape: {labels.shape}, Preds shape: {preds.shape}")
+
+    # 将预测和标签转换为文本进行比较
+    pred_texts = []
+    label_texts = []
+
+    # 兼容2维或1维（部分trainer可能输出1维）
+    batch_size = preds.shape[0]
+    for i in range(batch_size):
+        pred_tokens = preds[i]
+        label_tokens = labels[i]
+        pad_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id
+        # 去除padding
+        pred_tokens = pred_tokens[pred_tokens != pad_id]
+        label_tokens = label_tokens[label_tokens != pad_id]
+        pred_text = decoder_tokenizer.decode(pred_tokens.tolist(), skip_special_tokens=True).strip()
+        label_text = decoder_tokenizer.decode(label_tokens.tolist(), skip_special_tokens=True).strip()
+        pred_texts.append(pred_text)
+        label_texts.append(label_text)
+
+    # 计算准确率
+    correct = sum(1 for pred, label in zip(pred_texts, label_texts) if pred == label)
+    total = len(pred_texts)
     accuracy = correct / total if total > 0 else 0.0
-    
+
     # 调试信息：打印前几个预测和标签
-    if len(pred_tokens) > 0:
-        print(f"[DEBUG] 前3个预测token IDs: {pred_tokens[:3]}")
-        print(f"[DEBUG] 前3个真实token IDs: {labels[:3]}")
-        for i in range(min(3, len(pred_tokens))):
-            pred_word = decoder_tokenizer.decode([pred_tokens[i]])
-            label_word = decoder_tokenizer.decode([labels[i]])
-            print(f"[DEBUG] 样本{i}: 预测='{pred_word}' (id:{pred_tokens[i]}), 真实='{label_word}' (id:{labels[i]})")
-    
+    if len(pred_texts) > 0:
+        for i in range(min(10, len(pred_texts))):
+            print(f"[DEBUG] 样本{i}: 预测='{pred_texts[i]}', 真实='{label_texts[i]}', 匹配={pred_texts[i] == label_texts[i]}")
+
     return {"accuracy": round(float(accuracy), 4)}
 
 my_args = MySeq2SeqTrainingArguments(
@@ -395,6 +482,10 @@ lora_config = LoraConfig(
 
 model.encoder.gradient_checkpointing_enable()
 model = get_peft_model(model, lora_config)
+
+# 重要：PEFT包裹后重新绑定自定义generate方法
+if hasattr(model.base_model, '_custom_generate'):
+    model.generate = model.base_model._custom_generate
 
 # 打印LoRA训练参数统计
 print("\n==== LoRA训练参数统计 ====")
