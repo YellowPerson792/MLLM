@@ -1,0 +1,79 @@
+{
+  "os": "Linux-5.15.0-78-generic-x86_64-with-glibc2.35",
+  "python": "CPython 3.12.3",
+  "startedAt": "2025-08-03T06:16:57.583175Z",
+  "args": [
+    "--train_batch_size",
+    "2",
+    "--eval_batch_size",
+    "2",
+    "--eval_strategy",
+    "steps",
+    "--eval_steps",
+    "128",
+    "--logging_steps",
+    "64",
+    "--save_steps",
+    "512",
+    "--warmup_steps",
+    "512",
+    "--learning_rate",
+    "2e-4",
+    "--num_train_epochs",
+    "3",
+    "--save_total_limit",
+    "6",
+    "--lr_scheduler_type",
+    "linear",
+    "--gradient_accumulation_steps",
+    "8",
+    "--report_to",
+    "wandb",
+    "--bf16",
+    "--max_length",
+    "1024",
+    "--image_size",
+    "96",
+    "--num_train_samples",
+    "6000",
+    "--num_eval_samples",
+    "16"
+  ],
+  "program": "/root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py",
+  "codePath": "ImageCaption/train_jpeglm-gpt2_cls.py",
+  "git": {
+    "remote": "https://github.com/YellowPerson792/MLLM.git",
+    "commit": "5172a1aebe3ff4fcc74d3ac307427de5a6c843d6"
+  },
+  "email": "yellow_person@outlook.com",
+  "root": "/root/autodl-tmp/MLLM",
+  "host": "autodl-container-94144787f5-2fa73ce0",
+  "executable": "/root/miniconda3/bin/python",
+  "codePathLocal": "ImageCaption/train_jpeglm-gpt2_cls.py",
+  "cpu_count": 64,
+  "cpu_count_logical": 128,
+  "gpu": "NVIDIA vGPU-32GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "32212254720",
+      "used": "27697201152"
+    }
+  },
+  "memory": {
+    "total": "1081808056320"
+  },
+  "cpu": {
+    "count": 64,
+    "countLogical": 128
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA vGPU-32GB",
+      "memoryTotal": "34351349760",
+      "cudaCores": 10240,
+      "architecture": "Ada"
+    }
+  ],
+  "cudaVersion": "12.4"
+}

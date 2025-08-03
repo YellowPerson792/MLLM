@@ -135,16 +135,40 @@ class JpegLMEncoderWithPooling(JpegLMEncoder):
             last_hidden_state=pooled_output,
             hidden_states=encoder_outputs.hidden_states,
             attentions=getattr(encoder_outputs, 'attentions', None),
-            attention_mask=pooled_mask
         )
         
-from transformers.models.encoder_decoder.modeling_encoder_decoder import EncoderDecoderModel
+from transformers.models.encoder_decoder.modeling_encoder_decoder import EncoderDecoderModel, shift_tokens_right
+from transformers.utils import logging
+import warnings
+
+logger = logging.get_logger(__name__)
+
+DEPRECATION_WARNING = (
+    "Version v4.12.0 introduces a better way to train encoder-decoder models by computing the loss inside the"
+    " encoder-decoder framework rather than in the decoder itself. You may observe training discrepancies if"
+    " fine-tuning a model trained with versions anterior to 4.12.0. The decoder_input_ids are now created based on the"
+    " labels, no need to pass them yourself anymore."
+)
 
 class JpegLMEncoderDecoderModelWithPooling(EncoderDecoderModel):
     """
     支持 JpegLMEncoderWithPooling 的 EncoderDecoderModel
-    decoder 直接接受池化特征
+    decoder 直接接受池化特征，自动创建投影层处理维度不一致
     """
+    
+    def _maybe_init_enc_to_dec_proj(self):
+        """
+        自动检测encoder/decoder hidden_size维度不一致时创建线性投影层
+        """
+        if not hasattr(self, 'enc_to_dec_proj') or self.enc_to_dec_proj is None:
+            if (
+                self.encoder.config.hidden_size != self.decoder.config.hidden_size
+                and self.decoder.config.cross_attention_hidden_size is None
+            ):
+                self.enc_to_dec_proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.hidden_size)
+            else:
+                self.enc_to_dec_proj = None
+
     def forward(
         self,
         input_ids=None,
@@ -162,55 +186,198 @@ class JpegLMEncoderDecoderModelWithPooling(EncoderDecoderModel):
         return_dict=None,
         **kwargs,
     ):
-        # 如果未传入 encoder_outputs，则先运行 encoder
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        # 自动初始化投影层（如有需要）
+        self._maybe_init_enc_to_dec_proj()
+
+        # 分离 encoder/decoder kwargs（与官方逻辑一致）
+        kwargs_encoder = {argument: value for argument, value in kwargs.items() if not argument.startswith("decoder_")}
+        kwargs_decoder = {
+            argument[len("decoder_") :]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
+        }
+        if "num_items_in_batch" in kwargs_encoder:
+            kwargs_decoder["num_items_in_batch"] = kwargs_encoder.pop("num_items_in_batch", None)
+
+        # 1. 获取 encoder 输出
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                **kwargs
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                **kwargs_encoder,
             )
-        # 检查是否为池化版
-        if hasattr(encoder_outputs, "last_hidden_state") and encoder_outputs.last_hidden_state.dim() == 2:
-            # [batch_size, hidden_size]，池化特征
-            encoder_hidden_states = encoder_outputs.last_hidden_state.unsqueeze(1)  # [batch_size, 1, hidden_size]
-            encoder_attention_mask = torch.ones(encoder_hidden_states.shape[:2], device=encoder_hidden_states.device)
-        else:
-            # 标准序列输出
-            encoder_hidden_states = encoder_outputs.last_hidden_state
-            encoder_attention_mask = attention_mask
+        elif isinstance(encoder_outputs, tuple):
+            encoder_outputs = BaseModelOutput(*encoder_outputs)
 
-        # decoder 直接用池化特征
+        # 2. 获取 encoder hidden states
+        encoder_hidden_states = encoder_outputs[0]
+
+        # 3. 池化逻辑：如果是池化输出（2D），转换为序列格式
+        if encoder_hidden_states.dim() == 2:
+            # 池化特征 [batch, hidden] -> [batch, 1, hidden]
+            encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
+            # 池化后的 attention_mask：全1，因为只有一个 token
+            pooled_attention_mask = torch.ones(encoder_hidden_states.shape[:2], device=encoder_hidden_states.device)
+        else:
+            # 标准序列输出：保持原始 attention_mask
+            pooled_attention_mask = attention_mask
+
+        # 4. 线性投影（如有需要）- 与官方逻辑完全一致
+        if (
+            self.encoder.config.hidden_size != self.decoder.config.hidden_size
+            and self.decoder.config.cross_attention_hidden_size is None
+        ):
+            encoder_hidden_states = self.enc_to_dec_proj(encoder_hidden_states)
+
+        # 5. 处理 decoder_input_ids - 与官方逻辑完全一致
+        if (labels is not None) and (decoder_input_ids is None and decoder_inputs_embeds is None):
+            decoder_input_ids = shift_tokens_right(
+                labels, self.config.pad_token_id, self.config.decoder_start_token_id
+            )
+            if decoder_attention_mask is None:
+                decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
+        
+        # 生成时如果 decoder_input_ids 为 None，自动初始化
+        if decoder_input_ids is None and decoder_inputs_embeds is None:
+            batch_size = encoder_hidden_states.size(0)
+            decoder_input_ids = torch.full(
+                (batch_size, 1),
+                self.config.decoder_start_token_id,
+                dtype=torch.long,
+                device=encoder_hidden_states.device
+            )
+
+        # 6. Decoder forward - 与官方逻辑完全一致
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
             encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            past_key_values=past_key_values,
+            encoder_attention_mask=pooled_attention_mask,  # 使用池化处理后的 mask
             inputs_embeds=decoder_inputs_embeds,
-            use_cache=use_cache,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
+            use_cache=use_cache,
+            past_key_values=past_key_values,
             return_dict=return_dict,
+            **kwargs_decoder,
         )
 
-        # 损失计算与原版一致
+        # 7. 损失计算 - 与官方逻辑完全一致
         loss = None
         if labels is not None:
-            logits = decoder_outputs.logits
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+            warnings.warn(DEPRECATION_WARNING, FutureWarning)
+            logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(logits.reshape(-1, self.decoder.config.vocab_size), labels.view(-1))
 
+        # 8. 返回结果 - 与官方逻辑完全一致
         if not return_dict:
-            output = (decoder_outputs.logits,) + decoder_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
+            if loss is not None:
+                return (loss,) + decoder_outputs + encoder_outputs
+            else:
+                return decoder_outputs + encoder_outputs
 
         return Seq2SeqLMOutput(
             loss=loss,
             logits=decoder_outputs.logits,
             past_key_values=decoder_outputs.past_key_values,
             decoder_hidden_states=decoder_outputs.hidden_states,
+            decoder_attentions=decoder_outputs.attentions,
             cross_attentions=decoder_outputs.cross_attentions,
-            encoder_last_hidden_state=encoder_hidden_states,
+            encoder_last_hidden_state=encoder_outputs.last_hidden_state,
+            encoder_hidden_states=encoder_outputs.hidden_states,
+            encoder_attentions=encoder_outputs.attentions,
+        )
+
+    def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
+        """与官方方法保持一致"""
+        return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
+
+    def resize_token_embeddings(self, *args, **kwargs):
+        """与官方方法保持一致"""
+        raise NotImplementedError(
+            "Resizing the embedding layers via the EncoderDecoderModel directly is not supported. Please use the"
+            " respective methods of the wrapped objects (model.encoder.resize_token_embeddings(...) or"
+            " model.decoder.resize_token_embeddings(...))"
+        )
+
+    def _reorder_cache(self, past_key_values, beam_idx):
+        """与官方方法保持一致"""
+        # apply decoder cache reordering here
+        return self.decoder._reorder_cache(past_key_values, beam_idx)
+
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, attention_mask=None, 
+                                    encoder_outputs=None, **kwargs):
+        """
+        重写生成的输入准备方法，处理池化特征
+        """
+        # 如果 encoder_outputs 中的 last_hidden_state 是 2D（池化特征），
+        # 需要转换为 3D 格式以兼容生成逻辑
+        if encoder_outputs is not None:
+            encoder_hidden_states = encoder_outputs.last_hidden_state if hasattr(encoder_outputs, 'last_hidden_state') else encoder_outputs[0]
+            
+            if encoder_hidden_states.dim() == 2:
+                # 池化特征 [batch, hidden] -> [batch, 1, hidden]
+                encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
+                # 创建新的 BaseModelOutput
+                encoder_outputs = BaseModelOutput(
+                    last_hidden_state=encoder_hidden_states,
+                    hidden_states=getattr(encoder_outputs, 'hidden_states', None),
+                    attentions=getattr(encoder_outputs, 'attentions', None)
+                )
+                # 对应的 attention_mask 也需要调整
+                if attention_mask is not None and attention_mask.shape[1] != 1:
+                    attention_mask = torch.ones(encoder_hidden_states.shape[:2], device=encoder_hidden_states.device)
+
+        # 如果有 past_key_values，只保留最后一个 token
+        if past_key_values is not None:
+            input_ids = input_ids[:, -1:]
+
+        decoder_inputs = {
+            "input_ids": input_ids,
+            "past_key_values": past_key_values,
+            "encoder_outputs": encoder_outputs,
+            "attention_mask": attention_mask,
+            "use_cache": kwargs.get("use_cache"),
+        }
+        
+        return decoder_inputs
+
+    def generate(self, input_ids=None, attention_mask=None, encoder_outputs=None, **kwargs):
+        """
+        移除自定义generate方法，直接使用父类的逻辑，问题已在forward中解决
+        """
+        # 如果没有提供 encoder_outputs，先运行 encoder
+        if encoder_outputs is None and input_ids is not None:
+            encoder_outputs = self.encoder(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                return_dict=True
+            )
+
+        # 处理池化特征
+        if encoder_outputs is not None:
+            encoder_hidden_states = encoder_outputs.last_hidden_state if hasattr(encoder_outputs, 'last_hidden_state') else encoder_outputs[0]
+            if encoder_hidden_states.dim() == 2:
+                encoder_hidden_states = encoder_hidden_states.unsqueeze(1)
+                encoder_outputs = BaseModelOutput(
+                    last_hidden_state=encoder_hidden_states,
+                    hidden_states=getattr(encoder_outputs, 'hidden_states', None),
+                    attentions=getattr(encoder_outputs, 'attentions', None)
+                )
+                if attention_mask is not None:
+                    attention_mask = torch.ones(encoder_hidden_states.shape[:2], device=encoder_hidden_states.device)
+
+        # 调用父类生成方法，input_ids将在forward中自动初始化
+        return super().generate(
+            input_ids=None,  # 让forward方法自动处理
+            attention_mask=attention_mask,
+            encoder_outputs=encoder_outputs,
+            **kwargs
         )
 
 

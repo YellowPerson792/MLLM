@@ -1,0 +1,18 @@
+{"time":"2025-08-03T14:49:10.575609012+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"/root/autodl-tmp/MLLM/wandb/run-20250803_144910-sl7px2bo/logs/debug-core.log"}
+{"time":"2025-08-03T14:49:11.468179795+08:00","level":"INFO","msg":"created new stream","id":"sl7px2bo"}
+{"time":"2025-08-03T14:49:11.468254828+08:00","level":"INFO","msg":"stream: started","id":"sl7px2bo"}
+{"time":"2025-08-03T14:49:11.468402111+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T14:49:11.468564479+08:00","level":"INFO","msg":"handler: started","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T14:49:11.468514027+08:00","level":"INFO","msg":"sender: started","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T14:49:11.969144149+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-08-03T14:59:57.521879261+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": unexpected EOF"}
+{"time":"2025-08-03T15:02:27.521395762+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": unexpected EOF"}
+{"time":"2025-08-03T16:00:12.481683086+08:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": unexpected EOF"}
+{"time":"2025-08-03T16:00:15.333188966+08:00","level":"INFO","msg":"stream: closing","id":"sl7px2bo"}
+{"time":"2025-08-03T16:00:15.333231091+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-08-03T16:00:15.333269704+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-08-03T16:00:17.941617152+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-08-03T16:00:18.793308321+08:00","level":"INFO","msg":"handler: closed","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T16:00:18.793381854+08:00","level":"INFO","msg":"sender: closed","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T16:00:18.793368545+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"sl7px2bo"}
+{"time":"2025-08-03T16:00:18.793641803+08:00","level":"INFO","msg":"stream: closed","id":"sl7px2bo"}

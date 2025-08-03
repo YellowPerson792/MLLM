@@ -1,0 +1,31 @@
+/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:178: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+Training:   0%|                                                            | 0/9000 [00:00<?, ?it/s]/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:240: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
+/root/autodl-tmp/MLLM/jpeglm/models/jpeglm_encoder.py:242: UserWarning: To copy construct from a tensor, it is recommended to use sourceTensor.detach().clone() or sourceTensor.detach().clone().requires_grad_(True), rather than tensor.new_tensor(sourceTensor).
+  decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+/root/autodl-tmp/MLLM/jpeglm/models/jpeglm_encoder.py:262: FutureWarning: Version v4.12.0 introduces a better way to train encoder-decoder models by computing the loss inside the encoder-decoder framework rather than in the decoder itself. You may observe training discrepancies if fine-tuning a model trained with versions anterior to 4.12.0. The decoder_input_ids are now created based on the labels, no need to pass them yourself anymore.
+  warnings.warn(DEPRECATION_WARNING, FutureWarning)
+Training:   1%| | 128/9000 [02:05<2:32:30,  1.03s/it, ep=0.04/3, step=128, loss=2.2148, lr=5.00e-05]The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
+[Batch    64] [Opt    8] [Ep  0.021] | Loss:  6.5000 | GradNorm:  77.765 | LR: 2.50e-05
+[Batch   128] [Opt   16] [Ep  0.043] | Loss:  2.2148 | GradNorm:  58.841 | LR: 5.00e-05
+Eval@Step128:   0%|                                                           | 0/8 [00:00<?, ?it/s]Traceback (most recent call last):
+  File "/root/autodl-tmp/MLLM/ImageCaption/train_jpeglm-gpt2_cls.py", line 351, in <module>         
+    trainer.train()
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 290, in train
+    val_result = self.evaluate(val_loader, desc=f"Eval@Step{global_step}")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 352, in evaluate
+    preds = self.model.generate(encoder_outputs=encoder_outputs, generation_config=gen_config)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/peft_model.py", line 2146, in generate
+    outputs = self.base_model.generate(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/generation/utils.py", line 2461, in generate
+    inputs_tensor.shape[1] != input_ids_length
+    ~~~~~~~~~~~~~~~~~~~^^^
+IndexError: tuple index out of range
