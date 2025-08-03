@@ -1,0 +1,107 @@
+/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:178: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+Training:   0%|                                                            | 0/9000 [00:00<?, ?it/s]/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:240: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
+Eval@Step128 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Batch    64] [Opt    8] [Ep  0.021] | Loss:  1.9336 | GradNorm:  28.218 | LR: 2.50e-05
+[Batch   128] [Opt   16] [Ep  0.043] | Loss:  1.9805 | GradNorm:  19.771 | LR: 5.00e-05
+Eval@Step256 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 2.4574  Accuracy: 0.0000  (Total: 16)
+[Batch   128] [EVAL] | Loss:  2.4574 | 0.0
+[Batch   192] [Opt   24] [Ep  0.064] | Loss:  2.2891 | GradNorm:  16.185 | LR: 7.50e-05
+[Batch   256] [Opt   32] [Ep  0.085] | Loss:  2.6484 | GradNorm:  14.229 | LR: 1.00e-04
+Eval@Step384 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 2.2327  Accuracy: 0.0000  (Total: 16)
+[Batch   256] [EVAL] | Loss:  2.2327 | 0.0
+[Batch   320] [Opt   40] [Ep  0.107] | Loss:  2.7031 | GradNorm:  23.456 | LR: 1.25e-04
+[Batch   384] [Opt   48] [Ep  0.128] | Loss:  2.0234 | GradNorm:  15.267 | LR: 1.50e-04
+Eval@Step512 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.9938  Accuracy: 0.2500  (Total: 16)
+[Batch   384] [EVAL] | Loss:  1.9938 | 0.25
+[Batch   448] [Opt   56] [Ep  0.149] | Loss:  1.6367 | GradNorm:  19.989 | LR: 1.75e-04
+[Batch   512] [Opt   64] [Ep  0.171] | Loss:  1.7031 | GradNorm:  11.485 | LR: 2.00e-04
+Eval@Step640 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Custom Eval] Loss: 1.6889  Accuracy: 0.4375  (Total: 16)
+[Batch   512] [EVAL] | Loss:  1.6889 | 0.4375
+[Batch   512] [SAVE] | 保存检查点到 checkpoint-512
+[Batch   576] [Opt   72] [Ep  0.192] | Loss:  2.0586 | GradNorm:  14.957 | LR: 1.98e-04
+[Batch   640] [Opt   80] [Ep  0.213] | Loss:  1.4121 | GradNorm:  21.633 | LR: 1.97e-04
+Eval@Step768 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.5837  Accuracy: 0.4375  (Total: 16)
+[Batch   640] [EVAL] | Loss:  1.5837 | 0.4375
+[Batch   704] [Opt   88] [Ep  0.235] | Loss:  2.8164 | GradNorm:  15.432 | LR: 1.95e-04
+[Batch   768] [Opt   96] [Ep  0.256] | Loss:  1.1375 | GradNorm:  23.082 | LR: 1.94e-04
+Eval@Step896 (custom): 100%|█████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.5064  Accuracy: 0.5000  (Total: 16)
+[Batch   768] [EVAL] | Loss:  1.5064 | 0.5
+[Batch   832] [Opt  104] [Ep  0.277] | Loss:  3.0781 | GradNorm:  30.264 | LR: 1.92e-04
+[Batch   896] [Opt  112] [Ep  0.299] | Loss:  1.8555 | GradNorm:  25.909 | LR: 1.91e-04
+Eval@Step1024 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.65it/s]
+[Custom Eval] Loss: 1.8342  Accuracy: 0.3750  (Total: 16)
+[Batch   896] [EVAL] | Loss:  1.8342 | 0.375
+[Batch   960] [Opt  120] [Ep  0.320] | Loss:  2.4844 | GradNorm:  28.068 | LR: 1.89e-04
+[Batch  1024] [Opt  128] [Ep  0.341] | Loss:  2.6289 | GradNorm:  20.828 | LR: 1.88e-04
+Eval@Step1152 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.65it/s]
+[Custom Eval] Loss: 1.6629  Accuracy: 0.4375  (Total: 16)
+[Batch  1024] [EVAL] | Loss:  1.6629 | 0.4375
+[Batch  1024] [SAVE] | 保存检查点到 checkpoint-1024
+[Batch  1088] [Opt  136] [Ep  0.363] | Loss:  1.6758 | GradNorm:  23.883 | LR: 1.86e-04
+[Batch  1152] [Opt  144] [Ep  0.384] | Loss:  2.2227 | GradNorm:  21.218 | LR: 1.85e-04
+Eval@Step1280 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.5796  Accuracy: 0.4375  (Total: 16)
+[Batch  1152] [EVAL] | Loss:  1.5796 | 0.4375
+[Batch  1216] [Opt  152] [Ep  0.405] | Loss:  2.4258 | GradNorm:  16.719 | LR: 1.83e-04
+[Batch  1280] [Opt  160] [Ep  0.427] | Loss:  2.0586 | GradNorm:  25.343 | LR: 1.82e-04
+Eval@Step1408 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.65it/s]
+[Custom Eval] Loss: 1.2975  Accuracy: 0.5000  (Total: 16)
+[Batch  1280] [EVAL] | Loss:  1.2975 | 0.5
+[Batch  1344] [Opt  168] [Ep  0.448] | Loss:  0.5798 | GradNorm:  10.616 | LR: 1.80e-04
+[Batch  1408] [Opt  176] [Ep  0.469] | Loss:  1.2324 | GradNorm:  13.986 | LR: 1.79e-04
+Eval@Step1536 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.8557  Accuracy: 0.8125  (Total: 16)
+[Batch  1408] [EVAL] | Loss:  0.8557 | 0.8125
+[Batch  1472] [Opt  184] [Ep  0.491] | Loss:  1.6562 | GradNorm:  15.089 | LR: 1.77e-04
+[Batch  1536] [Opt  192] [Ep  0.512] | Loss:  1.1680 | GradNorm:  15.740 | LR: 1.76e-04
+Eval@Step1664 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.0517  Accuracy: 0.5625  (Total: 16)
+[Batch  1536] [EVAL] | Loss:  1.0517 | 0.5625
+[Batch  1536] [SAVE] | 保存检查点到 checkpoint-1536
+[Batch  1600] [Opt  200] [Ep  0.533] | Loss:  1.3359 | GradNorm:  14.266 | LR: 1.74e-04
+[Batch  1664] [Opt  208] [Ep  0.555] | Loss:  0.2786 | GradNorm:  22.254 | LR: 1.73e-04
+Eval@Step1792 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.62it/s]
+[Custom Eval] Loss: 0.8427  Accuracy: 0.7500  (Total: 16)
+[Batch  1664] [EVAL] | Loss:  0.8427 | 0.75
+[Batch  1728] [Opt  216] [Ep  0.576] | Loss:  1.1797 | GradNorm:  14.512 | LR: 1.71e-04
+[Batch  1792] [Opt  224] [Ep  0.597] | Loss:  0.7471 | GradNorm:  18.625 | LR: 1.70e-04
+Eval@Step1920 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.6914  Accuracy: 0.8125  (Total: 16)
+[Batch  1792] [EVAL] | Loss:  0.6914 | 0.8125
+[Batch  1856] [Opt  232] [Ep  0.619] | Loss:  0.6436 | GradNorm:  15.009 | LR: 1.68e-04
+[Batch  1920] [Opt  240] [Ep  0.640] | Loss:  0.9589 | GradNorm:  15.866 | LR: 1.67e-04
+Eval@Step2048 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.5432  Accuracy: 0.7500  (Total: 16)
+[Batch  1920] [EVAL] | Loss:  0.5432 | 0.75
+[Batch  1984] [Opt  248] [Ep  0.661] | Loss:  1.1336 | GradNorm:  14.128 | LR: 1.65e-04
+[Batch  2048] [Opt  256] [Ep  0.683] | Loss:  0.5088 | GradNorm:  18.292 | LR: 1.64e-04
+Eval@Step2176 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Custom Eval] Loss: 0.5561  Accuracy: 0.8125  (Total: 16)
+[Batch  2048] [EVAL] | Loss:  0.5561 | 0.8125
+[Batch  2048] [SAVE] | 保存检查点到 checkpoint-2048
+[Batch  2112] [Opt  264] [Ep  0.704] | Loss:  0.5234 | GradNorm:  23.374 | LR: 1.62e-04
+[Batch  2176] [Opt  272] [Ep  0.725] | Loss:  0.6621 | GradNorm:  14.069 | LR: 1.61e-04
+Training:  26%|▎| 2300/9000 [36:13<1:42:44,  1.09it/s, ep=0.77/3, step=2300, loss=1.6445, lr=1.58e-0Traceback (most recent call last):
+[Custom Eval] Loss: 0.2426  Accuracy: 0.9375  (Total: 16)
+[Batch  2176] [EVAL] | Loss:  0.2426 | 0.9375
+[Batch  2240] [Opt  280] [Ep  0.747] | Loss:  1.7178 | GradNorm:  28.000 | LR: 1.59e-04
+  File "/root/autodl-tmp/MLLM/train_enc_cls.py", line 227, in <module>
+    trainer.train()
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 244, in train
+    scaler.scale(loss).backward()
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/_tensor.py", line 648, in backward
+    torch.autograd.backward(
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/autograd/__init__.py", line 353, in backward
+    _engine_run_backward(
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/autograd/graph.py", line 824, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

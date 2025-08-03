@@ -1,0 +1,15 @@
+{"time":"2025-08-03T00:08:19.914869013+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.10","symlink path":"/root/autodl-tmp/MLLM/wandb/run-20250803_000819-crga6odq/logs/debug-core.log"}
+{"time":"2025-08-03T00:08:20.949494498+08:00","level":"INFO","msg":"created new stream","id":"crga6odq"}
+{"time":"2025-08-03T00:08:20.949570452+08:00","level":"INFO","msg":"stream: started","id":"crga6odq"}
+{"time":"2025-08-03T00:08:20.949610861+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:08:20.949632401+08:00","level":"INFO","msg":"sender: started","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:08:20.949722356+08:00","level":"INFO","msg":"handler: started","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:08:21.421487766+08:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-08-03T00:44:36.829097636+08:00","level":"INFO","msg":"stream: closing","id":"crga6odq"}
+{"time":"2025-08-03T00:44:36.829118571+08:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-08-03T00:44:36.829227313+08:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-08-03T00:44:39.34196525+08:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-08-03T00:44:40.148696463+08:00","level":"INFO","msg":"handler: closed","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:44:40.148743995+08:00","level":"INFO","msg":"writer: Close: closed","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:44:40.148760904+08:00","level":"INFO","msg":"sender: closed","stream_id":"crga6odq"}
+{"time":"2025-08-03T00:44:40.148847862+08:00","level":"INFO","msg":"stream: closed","id":"crga6odq"}

@@ -1,0 +1,180 @@
+/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:178: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+Training:   0%|                                                            | 0/9000 [00:00<?, ?it/s]/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:240: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
+Eval@Step128 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Batch    64] [Opt    8] [Ep  0.021] | Loss:  1.4375 | GradNorm:  19.540 | LR: 2.50e-05
+[Batch   128] [Opt   16] [Ep  0.043] | Loss:  1.7148 | GradNorm:  12.884 | LR: 5.00e-05
+Eval@Step256 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Custom Eval] Loss: 2.4764  Accuracy: 0.1250  (Total: 16)
+[Batch   128] [EVAL] | Loss:  2.4764 | 0.125
+[Batch   192] [Opt   24] [Ep  0.064] | Loss:  3.1406 | GradNorm:  21.081 | LR: 7.50e-05
+[Batch   256] [Opt   32] [Ep  0.085] | Loss:  2.1953 | GradNorm:  20.067 | LR: 1.00e-04
+Eval@Step384 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Custom Eval] Loss: 1.8242  Accuracy: 0.2500  (Total: 16)
+[Batch   256] [EVAL] | Loss:  1.8242 | 0.25
+[Batch   320] [Opt   40] [Ep  0.107] | Loss:  1.9980 | GradNorm:  38.888 | LR: 1.25e-04
+[Batch   384] [Opt   48] [Ep  0.128] | Loss:  0.8457 | GradNorm:  18.080 | LR: 1.50e-04
+Eval@Step512 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.3339  Accuracy: 0.6250  (Total: 16)
+[Batch   384] [EVAL] | Loss:  1.3339 | 0.625
+[Batch   448] [Opt   56] [Ep  0.149] | Loss:  0.3101 | GradNorm:  17.431 | LR: 1.75e-04
+[Batch   512] [Opt   64] [Ep  0.171] | Loss:  0.4115 | GradNorm:  23.423 | LR: 2.00e-04
+Eval@Step640 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.6703  Accuracy: 0.4375  (Total: 16)
+[Batch   512] [EVAL] | Loss:  1.6703 | 0.4375
+[Batch   512] [SAVE] | 保存检查点到 checkpoint-512
+[Batch   576] [Opt   72] [Ep  0.192] | Loss:  2.8071 | GradNorm:  22.128 | LR: 1.98e-04
+[Batch   640] [Opt   80] [Ep  0.213] | Loss:  1.8721 | GradNorm:  20.355 | LR: 1.97e-04
+Eval@Step768 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.0538  Accuracy: 0.5625  (Total: 16)
+[Batch   640] [EVAL] | Loss:  1.0538 | 0.5625
+[Batch   704] [Opt   88] [Ep  0.235] | Loss:  0.3833 | GradNorm:  11.962 | LR: 1.95e-04
+[Batch   768] [Opt   96] [Ep  0.256] | Loss:  0.0063 | GradNorm:  18.252 | LR: 1.94e-04
+Eval@Step896 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.9067  Accuracy: 0.6875  (Total: 16)
+[Batch   768] [EVAL] | Loss:  0.9067 | 0.6875
+[Batch   832] [Opt  104] [Ep  0.277] | Loss:  0.2170 | GradNorm:  27.068 | LR: 1.92e-04
+[Batch   896] [Opt  112] [Ep  0.299] | Loss:  1.8599 | GradNorm:  19.774 | LR: 1.91e-04
+Eval@Step1024 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.1502  Accuracy: 0.7500  (Total: 16)
+[Batch   896] [EVAL] | Loss:  1.1502 | 0.75
+[Batch   960] [Opt  120] [Ep  0.320] | Loss:  0.7203 | GradNorm:  29.173 | LR: 1.89e-04
+[Batch  1024] [Opt  128] [Ep  0.341] | Loss:  2.6372 | GradNorm:  16.697 | LR: 1.88e-04
+Eval@Step1152 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.65it/s]
+[Custom Eval] Loss: 0.6093  Accuracy: 0.6875  (Total: 16)
+[Batch  1024] [EVAL] | Loss:  0.6093 | 0.6875
+[Batch  1024] [SAVE] | 保存检查点到 checkpoint-1024
+[Batch  1088] [Opt  136] [Ep  0.363] | Loss:  0.0113 | GradNorm:   9.653 | LR: 1.86e-04
+[Batch  1152] [Opt  144] [Ep  0.384] | Loss:  0.0858 | GradNorm:  12.774 | LR: 1.85e-04
+Eval@Step1280 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 1.2840  Accuracy: 0.7500  (Total: 16)
+[Batch  1152] [EVAL] | Loss:  1.2840 | 0.75
+[Batch  1216] [Opt  152] [Ep  0.405] | Loss:  0.0729 | GradNorm:   9.159 | LR: 1.83e-04
+[Batch  1280] [Opt  160] [Ep  0.427] | Loss:  3.1328 | GradNorm:  23.225 | LR: 1.82e-04
+Eval@Step1408 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.4212  Accuracy: 0.8750  (Total: 16)
+[Batch  1280] [EVAL] | Loss:  0.4212 | 0.875
+[Batch  1344] [Opt  168] [Ep  0.448] | Loss:  0.3841 | GradNorm:  31.100 | LR: 1.80e-04
+[Batch  1408] [Opt  176] [Ep  0.469] | Loss:  0.2103 | GradNorm:  23.788 | LR: 1.79e-04
+Eval@Step1536 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.8901  Accuracy: 0.6875  (Total: 16)
+[Batch  1408] [EVAL] | Loss:  0.8901 | 0.6875
+[Batch  1472] [Opt  184] [Ep  0.491] | Loss:  0.2267 | GradNorm:  21.792 | LR: 1.77e-04
+[Batch  1536] [Opt  192] [Ep  0.512] | Loss:  0.0815 | GradNorm:  17.116 | LR: 1.76e-04
+Eval@Step1664 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.7195  Accuracy: 0.8125  (Total: 16)
+[Batch  1536] [EVAL] | Loss:  0.7195 | 0.8125
+[Batch  1536] [SAVE] | 保存检查点到 checkpoint-1536
+[Batch  1600] [Opt  200] [Ep  0.533] | Loss:  0.7986 | GradNorm: 475.419 | LR: 1.74e-04
+[Batch  1664] [Opt  208] [Ep  0.555] | Loss:  0.5400 | GradNorm:  26.616 | LR: 1.73e-04
+Eval@Step1792 (custom): 100%|███████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.6477  Accuracy: 0.6875  (Total: 16)
+[Batch  1664] [EVAL] | Loss:  0.6477 | 0.6875
+[Batch  1728] [Opt  216] [Ep  0.576] | Loss:  0.4531 | GradNorm:  85.334 | LR: 1.71e-04
+[Batch  1792] [Opt  224] [Ep  0.597] | Loss:  1.1879 | GradNorm:  23.851 | LR: 1.70e-04
+Eval@Step1920 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]4<00:00,  1.60it/s]
+[Custom Eval] Loss: 0.4743  Accuracy: 0.9375  (Total: 16)
+[Batch  1792] [EVAL] | Loss:  0.4743 | 0.9375
+[Batch  1856] [Opt  232] [Ep  0.619] | Loss:  0.0635 | GradNorm:  19.182 | LR: 1.68e-04
+[Batch  1920] [Opt  240] [Ep  0.640] | Loss:  0.0235 | GradNorm:   7.954 | LR: 1.67e-04
+Eval@Step2048 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.1785  Accuracy: 0.9375  (Total: 16)
+[Batch  1920] [EVAL] | Loss:  0.1785 | 0.9375
+[Batch  1984] [Opt  248] [Ep  0.661] | Loss:  0.3423 | GradNorm:  18.370 | LR: 1.65e-04
+[Batch  2048] [Opt  256] [Ep  0.683] | Loss:  0.1377 | GradNorm:  33.288 | LR: 1.64e-04
+Eval@Step2176 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.1544  Accuracy: 0.9375  (Total: 16)
+[Batch  2048] [EVAL] | Loss:  0.1544 | 0.9375
+[Batch  2048] [SAVE] | 保存检查点到 checkpoint-2048
+[Batch  2112] [Opt  264] [Ep  0.704] | Loss:  0.0049 | GradNorm:  11.070 | LR: 1.62e-04
+[Batch  2176] [Opt  272] [Ep  0.725] | Loss:  0.0514 | GradNorm:  18.973 | LR: 1.61e-04
+Eval@Step2304 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.63it/s]
+[Custom Eval] Loss: 0.4096  Accuracy: 0.8750  (Total: 16)
+[Batch  2176] [EVAL] | Loss:  0.4096 | 0.875
+[Batch  2240] [Opt  280] [Ep  0.747] | Loss:  0.0547 | GradNorm:  12.104 | LR: 1.59e-04
+[Batch  2304] [Opt  288] [Ep  0.768] | Loss:  1.1172 | GradNorm:  12.619 | LR: 1.58e-04
+Eval@Step2432 (custom): 100%|████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.64it/s]
+[Custom Eval] Loss: 0.2057  Accuracy: 0.9375  (Total: 16)
+[Batch  2304] [EVAL] | Loss:  0.2057 | 0.9375
+[Batch  2368] [Opt  296] [Ep  0.789] | Loss:  0.0020 | GradNorm: 135.613 | LR: 1.56e-04
+[Batch  2432] [Opt  304] [Ep  0.811] | Loss:  0.0516 | GradNorm:  12.938 | LR: 1.55e-04
+Training:  28%|▎| 2502/9000 [39:30<1:41:54,  1.06it/s, ep=0.83/3, step=2502, loss=0.0426, lr=1.53e-0Traceback (most recent call last):
+[Custom Eval] Loss: 0.2430  Accuracy: 0.8750  (Total: 16)
+[Batch  2432] [EVAL] | Loss:  0.2430 | 0.875
+[Batch  2496] [Opt  312] [Ep  0.832] | Loss:  0.0316 | GradNorm:  12.722 | LR: 1.53e-04
+  File "/root/autodl-tmp/MLLM/train_enc_cls.py", line 227, in <module>
+    trainer.train()
+  File "/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py", line 241, in train
+    outputs = self.model(**model_inputs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/peft_model.py", line 1559, in forward
+    return self.base_model(
+           ^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/peft/tuners/tuners_utils.py", line 193, in forward
+    return self.model.forward(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/autodl-tmp/MLLM/jpeglm/models/jpeglm_encoder.py", line 244, in forward
+    decoder_start_token_id=self.config.decoder_start_token_id
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/utils/generic.py", line 969, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/models/llama/modeling_llama.py", line 453, in forward
+    layer_outputs = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/modeling_layers.py", line 47, in __call__
+    return self._gradient_checkpointing_func(partial(super().__call__, **kwargs), *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/_compile.py", line 51, in inner
+    return disable_fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/_dynamo/eval_frame.py", line 838, in _fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/utils/checkpoint.py", line 488, in checkpoint
+    return CheckpointFunction.apply(function, preserve, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/autograd/function.py", line 575, in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/utils/checkpoint.py", line 263, in forward
+    outputs = run_function(*args)
+              ^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/models/llama/modeling_llama.py", line 305, in forward
+    hidden_states = self.input_layernorm(hidden_states)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/miniconda3/lib/python3.12/site-packages/transformers/models/llama/modeling_llama.py", line 71, in forward
+    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+               ^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

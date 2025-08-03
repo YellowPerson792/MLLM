@@ -1,0 +1,254 @@
+/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:178: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.fp16)
+Training:   0%|                                                            | 0/9000 [00:00<?, ?it/s]/root/autodl-tmp/MLLM/ImageCaption/hf_style_trainer.py:240: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
+Eval@Step128 (custom): 100%|████████████████████████████████████████████████████████████████████████| 8/8 [00:04<00:00,  1.62it/s]
+[Batch    64] [Opt    8] [Ep  0.021] | Loss:  2.1133 | GradNorm:  24.594 | LR: 2.50e-05
+[Batch   128] [Opt   16] [Ep  0.043] | Loss:  2.6562 | GradNorm:  15.693 | LR: 5.00e-05
+Eval@Step256 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.09/3, step=256, loss=1.6895, lr=1.00e-04]| 8/8 [00:04<00:00,  1.58it/s]
+[Custom Eval] Loss: 2.1793  Accuracy: 0.3750  (Total: 16)
+[Batch   128] [EVAL] | Loss:  2.1793 | 0.375
+[Batch   192] [Opt   24] [Ep  0.064] | Loss:  2.5391 | GradNorm:  19.609 | LR: 7.50e-05
+[Batch   256] [Opt   32] [Ep  0.085] | Loss:  1.6895 | GradNorm:  19.397 | LR: 1.00e-04
+Eval@Step384 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.13/3, step=384, loss=0.7979, lr=1.50e-04]
+[Custom Eval] Loss: 1.5983  Accuracy: 0.4375  (Total: 16)
+[Batch   256] [EVAL] | Loss:  1.5983 | 0.4375
+[Batch   320] [Opt   40] [Ep  0.107] | Loss:  3.2188 | GradNorm:  31.251 | LR: 1.25e-04
+[Batch   384] [Opt   48] [Ep  0.128] | Loss:  0.7979 | GradNorm: 255.095 | LR: 1.50e-04
+Eval@Step512 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.17/3, step=512, loss=1.8867, lr=2.00e-04]
+[Custom Eval] Loss: 1.4150  Accuracy: 0.3750  (Total: 16)
+[Batch   384] [EVAL] | Loss:  1.4150 | 0.375
+[Batch   448] [Opt   56] [Ep  0.149] | Loss:  0.3379 | GradNorm:  12.750 | LR: 1.75e-04
+[Batch   512] [Opt   64] [Ep  0.171] | Loss:  1.8867 | GradNorm:  18.433 | LR: 2.00e-04
+Eval@Step640 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.21/3, step=640, loss=1.2324, lr=1.97e-04]
+[Custom Eval] Loss: 0.8142  Accuracy: 0.6250  (Total: 16)
+[Batch   512] [EVAL] | Loss:  0.8142 | 0.625
+[Batch   512] [SAVE] | 保存检查点到 checkpoint-512
+[Batch   576] [Opt   72] [Ep  0.192] | Loss:  2.0730 | GradNorm:  16.019 | LR: 1.98e-04
+[Batch   640] [Opt   80] [Ep  0.213] | Loss:  1.2324 | GradNorm:  15.319 | LR: 1.97e-04
+Eval@Step768 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.26/3, step=768, loss=1.3567, lr=1.94e-04]
+[Custom Eval] Loss: 0.9905  Accuracy: 0.6875  (Total: 16)
+[Batch   640] [EVAL] | Loss:  0.9905 | 0.6875
+[Batch   704] [Opt   88] [Ep  0.235] | Loss:  3.0938 | GradNorm:  20.156 | LR: 1.95e-04
+[Batch   768] [Opt   96] [Ep  0.256] | Loss:  1.3567 | GradNorm:  25.233 | LR: 1.94e-04
+Eval@Step896 (custom): 100%|█| 8/8 [00:04<00:00,  /s, ep=0.30/3, step=896, loss=0.0897, lr=1.91e-04]
+[Custom Eval] Loss: 0.7794  Accuracy: 0.6875  (Total: 16)
+[Batch   768] [EVAL] | Loss:  0.7794 | 0.6875
+[Batch   832] [Opt  104] [Ep  0.277] | Loss:  1.7314 | GradNorm:  16.339 | LR: 1.92e-04
+[Batch   896] [Opt  112] [Ep  0.299] | Loss:  0.0897 | GradNorm:   8.920 | LR: 1.91e-04
+Eval@Step1024 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.34/3, step=1024, loss=0.0324, lr=1.88e-0
+[Custom Eval] Loss: 0.6647  Accuracy: 0.7500  (Total: 16)
+[Batch   896] [EVAL] | Loss:  0.6647 | 0.75
+[Batch   960] [Opt  120] [Ep  0.320] | Loss:  0.0764 | GradNorm:  22.951 | LR: 1.89e-04
+[Batch  1024] [Opt  128] [Ep  0.341] | Loss:  0.0324 | GradNorm:   6.076 | LR: 1.88e-04
+Eval@Step1152 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.38/3, step=1152, loss=1.3162, lr=1.85e-0
+[Custom Eval] Loss: 0.5507  Accuracy: 0.8125  (Total: 16)
+[Batch  1024] [EVAL] | Loss:  0.5507 | 0.8125
+[Batch  1024] [SAVE] | 保存检查点到 checkpoint-1024
+[Batch  1088] [Opt  136] [Ep  0.363] | Loss:  1.6445 | GradNorm:  20.577 | LR: 1.86e-04
+[Batch  1152] [Opt  144] [Ep  0.384] | Loss:  1.3162 | GradNorm:  18.173 | LR: 1.85e-04
+Eval@Step1280 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.43/3, step=1280, loss=0.7588, lr=1.82e-0
+[Custom Eval] Loss: 0.4440  Accuracy: 0.8750  (Total: 16)
+[Batch  1152] [EVAL] | Loss:  0.4440 | 0.875
+[Batch  1216] [Opt  152] [Ep  0.405] | Loss:  0.8379 | GradNorm:  16.950 | LR: 1.83e-04
+[Batch  1280] [Opt  160] [Ep  0.427] | Loss:  0.7588 | GradNorm:  12.118 | LR: 1.82e-04
+Eval@Step1408 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.47/3, step=1408, loss=0.0154, lr=1.79e-0
+[Custom Eval] Loss: 0.7825  Accuracy: 0.6875  (Total: 16)
+[Batch  1280] [EVAL] | Loss:  0.7825 | 0.6875
+[Batch  1344] [Opt  168] [Ep  0.448] | Loss:  1.8809 | GradNorm:  17.500 | LR: 1.80e-04
+[Batch  1408] [Opt  176] [Ep  0.469] | Loss:  0.0154 | GradNorm:  14.583 | LR: 1.79e-04
+Eval@Step1536 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.51/3, step=1536, loss=0.0046, lr=1.76e-0
+[Custom Eval] Loss: 0.5224  Accuracy: 0.8125  (Total: 16)
+[Batch  1408] [EVAL] | Loss:  0.5224 | 0.8125
+[Batch  1472] [Opt  184] [Ep  0.491] | Loss:  0.0486 | GradNorm:   5.845 | LR: 1.77e-04
+[Batch  1536] [Opt  192] [Ep  0.512] | Loss:  0.0046 | GradNorm:  19.277 | LR: 1.76e-04
+Eval@Step1664 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.55/3, step=1664, loss=0.0155, lr=1.73e-0
+[Custom Eval] Loss: 0.2027  Accuracy: 0.9375  (Total: 16)
+[Batch  1536] [EVAL] | Loss:  0.2027 | 0.9375
+[Batch  1536] [SAVE] | 保存检查点到 checkpoint-1536
+[Batch  1600] [Opt  200] [Ep  0.533] | Loss:  0.2974 | GradNorm:  11.179 | LR: 1.74e-04
+[Batch  1664] [Opt  208] [Ep  0.555] | Loss:  0.0155 | GradNorm:  10.172 | LR: 1.73e-04
+Eval@Step1792 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.60/3, step=1792, loss=0.0309, lr=1.70e-0
+[Custom Eval] Loss: 0.2293  Accuracy: 0.8750  (Total: 16)
+[Batch  1664] [EVAL] | Loss:  0.2293 | 0.875
+[Batch  1728] [Opt  216] [Ep  0.576] | Loss:  0.0182 | GradNorm:  13.641 | LR: 1.71e-04
+[Batch  1792] [Opt  224] [Ep  0.597] | Loss:  0.0309 | GradNorm:   4.779 | LR: 1.70e-04
+Eval@Step1920 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.64/3, step=1920, loss=1.8673, lr=1.67e-0
+[Custom Eval] Loss: 0.2114  Accuracy: 0.8750  (Total: 16)
+[Batch  1792] [EVAL] | Loss:  0.2114 | 0.875
+[Batch  1856] [Opt  232] [Ep  0.619] | Loss:  0.0145 | GradNorm:   9.479 | LR: 1.68e-04
+[Batch  1920] [Opt  240] [Ep  0.640] | Loss:  1.8673 | GradNorm:  12.056 | LR: 1.67e-04
+Eval@Step2048 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.68/3, step=2048, loss=1.0923, lr=1.64e-0
+[Custom Eval] Loss: 0.1021  Accuracy: 0.9375  (Total: 16)
+[Batch  1920] [EVAL] | Loss:  0.1021 | 0.9375
+[Batch  1984] [Opt  248] [Ep  0.661] | Loss:  0.0580 | GradNorm:  24.069 | LR: 1.65e-04
+[Batch  2048] [Opt  256] [Ep  0.683] | Loss:  1.0923 | GradNorm:   9.124 | LR: 1.64e-04
+Eval@Step2176 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.73/3, step=2176, loss=1.7624, lr=1.61e-0
+[Custom Eval] Loss: 0.1570  Accuracy: 0.9375  (Total: 16)
+[Batch  2048] [EVAL] | Loss:  0.1570 | 0.9375
+[Batch  2048] [SAVE] | 保存检查点到 checkpoint-2048
+[Batch  2112] [Opt  264] [Ep  0.704] | Loss:  0.0626 | GradNorm:  13.814 | LR: 1.62e-04
+[Batch  2176] [Opt  272] [Ep  0.725] | Loss:  1.7624 | GradNorm:  14.155 | LR: 1.61e-04
+Eval@Step2304 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.77/3, step=2304, loss=0.7316, lr=1.58e-0
+[Custom Eval] Loss: 0.1971  Accuracy: 0.8750  (Total: 16)
+[Batch  2176] [EVAL] | Loss:  0.1971 | 0.875
+[Batch  2240] [Opt  280] [Ep  0.747] | Loss:  0.1237 | GradNorm:  13.077 | LR: 1.59e-04
+[Batch  2304] [Opt  288] [Ep  0.768] | Loss:  0.7316 | GradNorm:   7.833 | LR: 1.58e-04
+Eval@Step2432 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.81/3, step=2432, loss=0.0019, lr=1.55e-0
+[Custom Eval] Loss: 0.1889  Accuracy: 0.9375  (Total: 16)
+[Batch  2304] [EVAL] | Loss:  0.1889 | 0.9375
+[Batch  2368] [Opt  296] [Ep  0.789] | Loss:  0.0277 | GradNorm:  27.574 | LR: 1.56e-04
+[Batch  2432] [Opt  304] [Ep  0.811] | Loss:  0.0019 | GradNorm:  31.809 | LR: 1.55e-04
+Eval@Step2560 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.85/3, step=2560, loss=0.0232, lr=1.52e-0
+[Custom Eval] Loss: 0.0703  Accuracy: 1.0000  (Total: 16)
+[Batch  2432] [EVAL] | Loss:  0.0703 | 1.0
+[Batch  2496] [Opt  312] [Ep  0.832] | Loss:  0.3922 | GradNorm:  33.550 | LR: 1.53e-04
+[Batch  2560] [Opt  320] [Ep  0.853] | Loss:  0.0232 | GradNorm:  18.758 | LR: 1.52e-04
+Eval@Step2688 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.90/3, step=2688, loss=0.7426, lr=1.49e-0
+[Custom Eval] Loss: 0.1133  Accuracy: 1.0000  (Total: 16)
+[Batch  2560] [EVAL] | Loss:  0.1133 | 1.0
+[Batch  2560] [SAVE] | 保存检查点到 checkpoint-2560
+[Batch  2624] [Opt  328] [Ep  0.875] | Loss:  0.0003 | GradNorm:   2.502 | LR: 1.50e-04
+[Batch  2688] [Opt  336] [Ep  0.896] | Loss:  0.7426 | GradNorm:  12.676 | LR: 1.49e-04
+Eval@Step2816 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.94/3, step=2816, loss=0.0712, lr=1.46e-0
+[Custom Eval] Loss: 0.1122  Accuracy: 0.9375  (Total: 16)
+[Batch  2688] [EVAL] | Loss:  0.1122 | 0.9375
+[Batch  2752] [Opt  344] [Ep  0.917] | Loss:  0.0467 | GradNorm:  15.500 | LR: 1.47e-04
+[Batch  2816] [Opt  352] [Ep  0.939] | Loss:  0.0712 | GradNorm:  11.697 | LR: 1.46e-04
+Eval@Step2944 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=0.98/3, step=2944, loss=0.0064, lr=1.43e-0
+[Custom Eval] Loss: 0.3468  Accuracy: 0.8750  (Total: 16)
+[Batch  2816] [EVAL] | Loss:  0.3468 | 0.875
+[Batch  2880] [Opt  360] [Ep  0.960] | Loss:  0.0076 | GradNorm:  13.708 | LR: 1.44e-04
+[Batch  2944] [Opt  368] [Ep  0.981] | Loss:  0.0064 | GradNorm:  10.536 | LR: 1.43e-04
+Eval@Step3072 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.02/3, step=3072, loss=0.0123, lr=1.40e-0
+[Custom Eval] Loss: 0.0780  Accuracy: 1.0000  (Total: 16)
+[Batch  2944] [EVAL] | Loss:  0.0780 | 1.0
+=== [EPOCH 1/3 完成] | 平均Loss: 0.7109 | 总Batch步数: 3000 | 总Opt步数: 375 ===
+[Batch  3008] [Opt  376] [Ep  1.003] | Loss:  4.0655 | GradNorm:  14.847 | LR: 1.41e-04
+[Batch  3072] [Opt  384] [Ep  1.024] | Loss:  0.0123 | GradNorm:   6.551 | LR: 1.40e-04
+Eval@Step3200 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.07/3, step=3200, loss=0.0020, lr=1.37e-0
+[Custom Eval] Loss: 0.0426  Accuracy: 1.0000  (Total: 16)
+[Batch  3072] [EVAL] | Loss:  0.0426 | 1.0
+[Batch  3072] [SAVE] | 保存检查点到 checkpoint-3072
+[Batch  3136] [Opt  392] [Ep  1.045] | Loss:  0.0010 | GradNorm:  10.808 | LR: 1.38e-04
+[Batch  3200] [Opt  400] [Ep  1.067] | Loss:  0.0020 | GradNorm:   6.468 | LR: 1.37e-04
+Eval@Step3328 (custom): 100%|█| 8/8 [00:04<00:00, 8it/s, ep=1.11/3, step=3328, loss=0.0016, lr=1.34e
+[Custom Eval] Loss: 0.0570  Accuracy: 1.0000  (Total: 16)
+[Batch  3200] [EVAL] | Loss:  0.0570 | 1.0
+[Batch  3264] [Opt  408] [Ep  1.088] | Loss:  0.0008 | GradNorm:   0.611 | LR: 1.35e-04
+[Batch  3328] [Opt  416] [Ep  1.109] | Loss:  0.0016 | GradNorm:   5.158 | LR: 1.34e-04
+Eval@Step3456 (custom): 100%|█| 8/8 [00:04<00:00, 2it/s, ep=1.15/3, step=3456, loss=0.0255, lr=1.31e
+[Custom Eval] Loss: 0.1034  Accuracy: 0.9375  (Total: 16)
+[Batch  3328] [EVAL] | Loss:  0.1034 | 0.9375
+[Batch  3392] [Opt  424] [Ep  1.131] | Loss:  0.9764 | GradNorm:   9.522 | LR: 1.32e-04
+[Batch  3456] [Opt  432] [Ep  1.152] | Loss:  0.0255 | GradNorm:  11.742 | LR: 1.31e-04
+Eval@Step3584 (custom): 100%|█| 8/8 [00:04<00:00, 0it/s, ep=1.19/3, step=3584, loss=0.0059, lr=1.28e
+[Custom Eval] Loss: 0.2073  Accuracy: 0.9375  (Total: 16)
+[Batch  3456] [EVAL] | Loss:  0.2073 | 0.9375
+[Batch  3520] [Opt  440] [Ep  1.173] | Loss:  1.3291 | GradNorm:  17.740 | LR: 1.29e-04
+[Batch  3584] [Opt  448] [Ep  1.195] | Loss:  0.0059 | GradNorm:   0.196 | LR: 1.28e-04
+Eval@Step3712 (custom): 100%|█| 8/8 [00:04<00:00, 7it/s, ep=1.24/3, step=3712, loss=0.0169, lr=1.25e
+[Custom Eval] Loss: 0.1039  Accuracy: 0.9375  (Total: 16)
+[Batch  3584] [EVAL] | Loss:  0.1039 | 0.9375
+[Batch  3584] [SAVE] | 保存检查点到 checkpoint-3584
+[Batch  3648] [Opt  456] [Ep  1.216] | Loss:  0.2405 | GradNorm:  16.537 | LR: 1.26e-04
+[Batch  3712] [Opt  464] [Ep  1.237] | Loss:  0.0169 | GradNorm:  12.733 | LR: 1.25e-04
+Eval@Step3840 (custom): 100%|█| 8/8 [00:04<00:00, 2it/s, ep=1.28/3, step=3840, loss=0.0020, lr=1.22e
+[Custom Eval] Loss: 0.3116  Accuracy: 0.8750  (Total: 16)
+[Batch  3712] [EVAL] | Loss:  0.3116 | 0.875
+[Batch  3776] [Opt  472] [Ep  1.259] | Loss:  0.0330 | GradNorm:   9.841 | LR: 1.23e-04
+[Batch  3840] [Opt  480] [Ep  1.280] | Loss:  0.0020 | GradNorm:  11.922 | LR: 1.22e-04
+Eval@Step3968 (custom): 100%|█| 8/8 [00:04<00:00, 6it/s, ep=1.32/3, step=3968, loss=0.0010, lr=1.19e
+[Custom Eval] Loss: 0.2081  Accuracy: 0.9375  (Total: 16)
+[Batch  3840] [EVAL] | Loss:  0.2081 | 0.9375
+[Batch  3904] [Opt  488] [Ep  1.301] | Loss:  0.0249 | GradNorm:  12.629 | LR: 1.20e-04
+[Batch  3968] [Opt  496] [Ep  1.323] | Loss:  0.0010 | GradNorm:   0.571 | LR: 1.19e-04
+Eval@Step4096 (custom): 100%|█| 8/8 [00:04<00:00, 4it/s, ep=1.37/3, step=4096, loss=0.0003, lr=1.16e
+[Custom Eval] Loss: 0.0487  Accuracy: 1.0000  (Total: 16)
+[Batch  3968] [EVAL] | Loss:  0.0487 | 1.0
+[Batch  4032] [Opt  504] [Ep  1.344] | Loss:  0.0007 | GradNorm:  26.872 | LR: 1.17e-04
+[Batch  4096] [Opt  512] [Ep  1.365] | Loss:  0.0003 | GradNorm:   2.558 | LR: 1.16e-04
+Eval@Step4224 (custom): 100%|█| 8/8 [00:04<00:00, 8it/s, ep=1.41/3, step=4224, loss=0.0100, lr=1.13e
+[Custom Eval] Loss: 0.1048  Accuracy: 0.9375  (Total: 16)
+[Batch  4096] [EVAL] | Loss:  0.1048 | 0.9375
+[Batch  4096] [SAVE] | 保存检查点到 checkpoint-4096
+[Batch  4160] [Opt  520] [Ep  1.387] | Loss:  0.0016 | GradNorm:  11.652 | LR: 1.14e-04
+[Batch  4224] [Opt  528] [Ep  1.408] | Loss:  0.0100 | GradNorm:   2.395 | LR: 1.13e-04
+Eval@Step4352 (custom): 100%|█| 8/8 [00:04<00:00, 7it/s, ep=1.45/3, step=4352, loss=0.0022, lr=1.10e
+[Custom Eval] Loss: 0.0951  Accuracy: 0.9375  (Total: 16)
+[Batch  4224] [EVAL] | Loss:  0.0951 | 0.9375
+[Batch  4288] [Opt  536] [Ep  1.429] | Loss:  0.0063 | GradNorm:  11.022 | LR: 1.11e-04
+[Batch  4352] [Opt  544] [Ep  1.451] | Loss:  0.0022 | GradNorm:   7.757 | LR: 1.10e-04
+Eval@Step4480 (custom): 100%|█| 8/8 [00:04<00:00, 3it/s, ep=1.49/3, step=4480, loss=0.0192, lr=1.07e
+[Custom Eval] Loss: 0.1032  Accuracy: 0.9375  (Total: 16)
+[Batch  4352] [EVAL] | Loss:  0.1032 | 0.9375
+[Batch  4416] [Opt  552] [Ep  1.472] | Loss:  0.0191 | GradNorm:   0.568 | LR: 1.08e-04
+[Batch  4480] [Opt  560] [Ep  1.493] | Loss:  0.0192 | GradNorm:   8.768 | LR: 1.07e-04
+Eval@Step4608 (custom): 100%|█| 8/8 [00:04<00:00, 8it/s, ep=1.54/3, step=4608, loss=0.5107, lr=1.03e
+[Custom Eval] Loss: 0.1044  Accuracy: 0.9375  (Total: 16)
+[Batch  4480] [EVAL] | Loss:  0.1044 | 0.9375
+[Batch  4544] [Opt  568] [Ep  1.515] | Loss:  0.0031 | GradNorm:   6.159 | LR: 1.05e-04
+[Batch  4608] [Opt  576] [Ep  1.536] | Loss:  0.5107 | GradNorm:   7.666 | LR: 1.03e-04
+Eval@Step4736 (custom): 100%|█| 8/8 [00:04<00:00, 2it/s, ep=1.58/3, step=4736, loss=0.0032, lr=1.00e
+[Custom Eval] Loss: 0.0254  Accuracy: 1.0000  (Total: 16)
+[Batch  4608] [EVAL] | Loss:  0.0254 | 1.0
+[Batch  4608] [SAVE] | 保存检查点到 checkpoint-4608
+[Batch  4672] [Opt  584] [Ep  1.557] | Loss:  0.0084 | GradNorm:   9.704 | LR: 1.02e-04
+[Batch  4736] [Opt  592] [Ep  1.579] | Loss:  0.0032 | GradNorm:  11.905 | LR: 1.00e-04
+Eval@Step4864 (custom): 100%|█| 8/8 [00:04<00:00, 1it/s, ep=1.62/3, step=4864, loss=0.0030, lr=9.75e
+[Custom Eval] Loss: 0.0452  Accuracy: 1.0000  (Total: 16)
+[Batch  4736] [EVAL] | Loss:  0.0452 | 1.0
+[Batch  4800] [Opt  600] [Ep  1.600] | Loss:  0.0564 | GradNorm:   1.188 | LR: 9.90e-05
+[Batch  4864] [Opt  608] [Ep  1.621] | Loss:  0.0030 | GradNorm:   0.427 | LR: 9.75e-05
+Eval@Step4992 (custom): 100%|█| 8/8 [00:04<00:00, 6it/s, ep=1.66/3, step=4992, loss=0.0003, lr=9.44e
+[Custom Eval] Loss: 0.0295  Accuracy: 1.0000  (Total: 16)
+[Batch  4864] [EVAL] | Loss:  0.0295 | 1.0
+[Batch  4928] [Opt  616] [Ep  1.643] | Loss:  0.0012 | GradNorm:   0.294 | LR: 9.59e-05
+[Batch  4992] [Opt  624] [Ep  1.664] | Loss:  0.0003 | GradNorm:   0.399 | LR: 9.44e-05
+Eval@Step5120 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.71/3, step=5120, loss=0.0011, lr=9.14e-0
+[Custom Eval] Loss: 0.0197  Accuracy: 1.0000  (Total: 16)
+[Batch  4992] [EVAL] | Loss:  0.0197 | 1.0
+[Batch  5056] [Opt  632] [Ep  1.685] | Loss:  0.0018 | GradNorm:   1.019 | LR: 9.29e-05
+[Batch  5120] [Opt  640] [Ep  1.707] | Loss:  0.0011 | GradNorm:   2.112 | LR: 9.14e-05
+Eval@Step5248 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.75/3, step=5248, loss=0.0014, lr=8.84e-0
+[Custom Eval] Loss: 0.0158  Accuracy: 1.0000  (Total: 16)
+[Batch  5120] [EVAL] | Loss:  0.0158 | 1.0
+[Batch  5120] [SAVE] | 保存检查点到 checkpoint-5120
+[Batch  5184] [Opt  648] [Ep  1.728] | Loss:  0.0027 | GradNorm:   0.512 | LR: 8.99e-05
+[Batch  5248] [Opt  656] [Ep  1.749] | Loss:  0.0014 | GradNorm:  10.943 | LR: 8.84e-05
+Eval@Step5376 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.79/3, step=5376, loss=0.0013, lr=8.54e-0
+[Custom Eval] Loss: 0.0180  Accuracy: 1.0000  (Total: 16)
+[Batch  5248] [EVAL] | Loss:  0.0180 | 1.0
+[Batch  5312] [Opt  664] [Ep  1.771] | Loss:  0.7586 | GradNorm:   8.492 | LR: 8.69e-05
+[Batch  5376] [Opt  672] [Ep  1.792] | Loss:  0.0013 | GradNorm:   0.453 | LR: 8.54e-05
+Eval@Step5504 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.83/3, step=5504, loss=0.0028, lr=8.24e-0
+[Custom Eval] Loss: 0.0430  Accuracy: 1.0000  (Total: 16)
+[Batch  5376] [EVAL] | Loss:  0.0430 | 1.0
+[Batch  5440] [Opt  680] [Ep  1.813] | Loss:  0.0007 | GradNorm:   2.487 | LR: 8.39e-05
+[Batch  5504] [Opt  688] [Ep  1.835] | Loss:  0.0028 | GradNorm:   1.966 | LR: 8.24e-05
+Eval@Step5632 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.88/3, step=5632, loss=0.0027, lr=7.94e-0
+[Custom Eval] Loss: 0.1429  Accuracy: 0.8750  (Total: 16)
+[Batch  5504] [EVAL] | Loss:  0.1429 | 0.875
+[Batch  5568] [Opt  696] [Ep  1.856] | Loss:  0.0002 | GradNorm:   0.095 | LR: 8.09e-05
+[Batch  5632] [Opt  704] [Ep  1.877] | Loss:  0.0027 | GradNorm:  20.297 | LR: 7.94e-05
+Eval@Step5760 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.92/3, step=5760, loss=0.0183, lr=7.63e-0
+[Custom Eval] Loss: 0.1466  Accuracy: 0.9375  (Total: 16)
+[Batch  5632] [EVAL] | Loss:  0.1466 | 0.9375
+[Batch  5632] [SAVE] | 保存检查点到 checkpoint-5632
+[Batch  5696] [Opt  712] [Ep  1.899] | Loss:  0.0185 | GradNorm:   4.965 | LR: 7.79e-05
+[Batch  5760] [Opt  720] [Ep  1.920] | Loss:  0.0183 | GradNorm:   3.147 | LR: 7.63e-05
+Eval@Step5888 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=1.96/3, step=5888, loss=0.0007, lr=7.33e-0
+[Custom Eval] Loss: 0.0624  Accuracy: 1.0000  (Total: 16)
+[Batch  5760] [EVAL] | Loss:  0.0624 | 1.0
+[Batch  5824] [Opt  728] [Ep  1.941] | Loss:  0.0009 | GradNorm:   0.154 | LR: 7.48e-05
+[Batch  5888] [Opt  736] [Ep  1.963] | Loss:  0.0007 | GradNorm:   5.092 | LR: 7.33e-05
+Eval@Step6016 (custom): 100%|█| 8/8 [00:04<00:00, t/s, ep=2.01/3, step=6016, loss=0.0006, lr=7.03e-0
+[Custom Eval] Loss: 0.0142  Accuracy: 1.0000  (Total: 16)
+[Batch  5888] [EVAL] | Loss:  0.0142 | 1.0
+[Batch  5952] [Opt  744] [Ep  1.984] | Loss:  0.0035 | GradNorm:   2.131 | LR: 7.18e-05
+=== [EPOCH 2/3 完成] | 平均Loss: 0.1508 | 总Batch步数: 6000 | 总Opt步数: 750 ===
+[Batch  6016] [Opt  752] [Ep  2.005] | Loss:  0.0006 | GradNorm:   0.240 | LR: 7.03e-05
+Training:  68%|▋| 6122/9000 [1:44:22<44:31,  1.08it/s, ep=2.04/3, step=6122, loss=0.0073, lr=6.79e-0
+[Custom Eval] Loss: 0.0201  Accuracy: 1.0000  (Total: 16)
+[Batch  6016] [EVAL] | Loss:  0.0201 | 1.0
+[Batch  6080] [Opt  760] [Ep  2.027] | Loss:  0.0014 | GradNorm:   4.726 | LR: 6.88e-05

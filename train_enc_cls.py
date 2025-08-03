@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 512 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/train_enc_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import sys
 import os
@@ -23,7 +23,7 @@ from ImageCaption.hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArg
 
 # 配置
 class config:
-    ENCODER = "/root/autodl-fs/models/jpeg-lm"
+    ENCODER = "/root/autodl-tmp/MLLM/models/jpeg-lm"
     NUM_CLASSES = 10
 
 os.environ["WANDB_DISABLED"] = "true"
@@ -113,7 +113,7 @@ def dynamic_pad_collate_fn(batch):
 model = create_jpeglm_encoder_cls_model(
     model_name_or_path=config.ENCODER,
     num_classes=config.NUM_CLASSES,
-    pooling="mean"
+    pooling_strategy="last"
 )
 model = model.to(device)
 
