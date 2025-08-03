@@ -97,6 +97,49 @@ digit_to_text = {
     5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"
 }
 
+# ====== TinyDecoder词表和模块 ======
+tiny_vocab = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+word2id = {w: i for i, w in enumerate(tiny_vocab)}
+id2word = {i: w for i, w in enumerate(tiny_vocab)}
+
+import torch.nn as nn
+from transformers import PreTrainedModel, PretrainedConfig
+
+class TinyDecoderConfig(PretrainedConfig):
+    def __init__(self, vocab_size=10, hidden_size=32, num_layers=1, num_heads=2, **kwargs):
+        super().__init__(**kwargs)
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.num_heads = num_heads
+
+class TinyTransformerDecoder(PreTrainedModel):
+    config_class = TinyDecoderConfig
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.embedding = nn.Embedding(config.vocab_size, config.hidden_size)
+        decoder_layer = nn.TransformerDecoderLayer(
+            d_model=config.hidden_size,
+            nhead=config.num_heads,
+            dim_feedforward=config.hidden_size * 2,
+            batch_first=True
+        )
+        self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=config.num_layers)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size)
+
+    def forward(self, input_ids, encoder_hidden_states, attention_mask=None, labels=None, **kwargs):
+        x = self.embedding(input_ids)
+        tgt_mask = None
+        memory = encoder_hidden_states
+        out = self.decoder(x, memory, tgt_mask=tgt_mask)
+        logits = self.lm_head(out)
+        loss = None
+        if labels is not None:
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+        return {"logits": logits, "loss": loss} if loss is not None else {"logits": logits}
+
 class MNISTJpegBytesDataset(Dataset):
     def __init__(self, hf_dataset, encoder_tokenizer, decoder_tokenizer, digit_to_text, max_length=1024, image_size=28, bit_flip_prob=0.0):
         self.dataset = hf_dataset
@@ -115,27 +158,17 @@ class MNISTJpegBytesDataset(Dataset):
         # MNIST数据格式: {'image': PIL_image, 'label': int}
         label = item['label']
         caption = self.digit_to_text[label]  # 根据数字标签生成文本
-        
         # 处理图像
         img = item['image'].convert("RGB")  # MNIST原本是灰度图，转为RGB
         img = self.transform(img)
-        
         # 将图像转换为JPEG字节流
         jpeg_str = convert_img_to_bytes(img, bit_flip_prob=self.bit_flip_prob)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
-        
-        # 截断到max_length，但不进行padding，让collate_fn来处理
         input_ids = input_ids[:self.max_length]
-        
-        # 处理标签文本
-        labels = self.decoder_tokenizer(
-            caption,
-            max_length=20,  # 分类文本较短，减少最大长度
-            truncation=True
-        ).input_ids
-        labels = [token if token != self.decoder_tokenizer.pad_token_id else -100 for token in labels]
-        
-        return {"input_ids": torch.tensor(input_ids), "labels": torch.tensor(labels)}
+        # 处理标签文本（只用tiny_vocab）
+        label_id = word2id[caption]
+        labels = torch.tensor([label_id])  # 只输出一个token
+        return {"input_ids": torch.tensor(input_ids), "labels": labels}
 
 
 train_dataset = MNISTJpegBytesDataset(
@@ -165,30 +198,29 @@ def dynamic_pad_collate_fn(batch):
 
 # 构建EncoderDecoderModel，使用ViTEncoderWrapper
 
-gpt2_config = GPT2Config.from_pretrained(config.DECODER)
-gpt2_config.add_cross_attention = True
-gpt2 = GPT2LMHeadModel.from_pretrained(config.DECODER, config=gpt2_config)
+
 # 用JpegLMEncoder作为encoder
 encoder = create_jpeglm_encoder_with_pooling(config.ENCODER, pooling_strategy='last')
-model = JpegLMEncoderDecoderModelWithPooling(encoder=encoder, decoder=gpt2)
-# model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
+# TinyDecoder
+tiny_config = TinyDecoderConfig(vocab_size=len(tiny_vocab))
+tiny_decoder = TinyTransformerDecoder(tiny_config)
+model = JpegLMEncoderDecoderModelWithPooling(encoder=encoder, decoder=tiny_decoder)
 
-# 只设置结构/训练相关参数
-model.config.decoder_start_token_id = decoder_tokenizer.bos_token_id
-model.config.pad_token_id = decoder_tokenizer.pad_token_id
-model.config.eos_token_id = decoder_tokenizer.eos_token_id
-model.config.vocab_size = model.config.decoder.vocab_size
+# 设置结构/训练相关参数
+model.config.decoder_start_token_id = 0  # 'zero'对应id=0
+model.config.pad_token_id = -100  # 不使用pad
+model.config.eos_token_id = None
+model.config.vocab_size = len(tiny_vocab)
 model.main_input_name = "input_ids"
 
-# 使用新版transformers的GenerationConfig
+# GenerationConfig（只生成1个token）
 generation_config = GenerationConfig(
     max_new_tokens=1,
     num_beams=1,
-    no_repeat_ngram_size=3,
-    decoder_start_token_id=model.config.decoder_start_token_id,
-    bos_token_id=decoder_tokenizer.bos_token_id,
-    pad_token_id=decoder_tokenizer.pad_token_id,
-    eos_token_id=decoder_tokenizer.eos_token_id,
+    decoder_start_token_id=0,
+    bos_token_id=0,
+    pad_token_id=-100,
+    eos_token_id=None,
 )
 model.generation_config = generation_config
 
