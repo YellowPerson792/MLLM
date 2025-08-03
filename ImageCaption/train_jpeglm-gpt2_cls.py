@@ -344,7 +344,6 @@ trainer = MySeq2SeqTrainer(
     args=my_args,
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
-    tokenizer=decoder_tokenizer,
     compute_metrics=compute_metrics,
     data_collator=dynamic_pad_collate_fn
 )
