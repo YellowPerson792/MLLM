@@ -137,6 +137,81 @@ class JpegLMEncoderWithPooling(JpegLMEncoder):
             attentions=getattr(encoder_outputs, 'attentions', None),
             attention_mask=pooled_mask
         )
+        
+from transformers.models.encoder_decoder.modeling_encoder_decoder import EncoderDecoderModel
+
+class JpegLMEncoderDecoderModelWithPooling(EncoderDecoderModel):
+    """
+    支持 JpegLMEncoderWithPooling 的 EncoderDecoderModel
+    decoder 直接接受池化特征
+    """
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        decoder_input_ids=None,
+        decoder_attention_mask=None,
+        encoder_outputs=None,
+        past_key_values=None,
+        inputs_embeds=None,
+        decoder_inputs_embeds=None,
+        labels=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        **kwargs,
+    ):
+        # 如果未传入 encoder_outputs，则先运行 encoder
+        if encoder_outputs is None:
+            encoder_outputs = self.encoder(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                **kwargs
+            )
+        # 检查是否为池化版
+        if hasattr(encoder_outputs, "last_hidden_state") and encoder_outputs.last_hidden_state.dim() == 2:
+            # [batch_size, hidden_size]，池化特征
+            encoder_hidden_states = encoder_outputs.last_hidden_state.unsqueeze(1)  # [batch_size, 1, hidden_size]
+            encoder_attention_mask = torch.ones(encoder_hidden_states.shape[:2], device=encoder_hidden_states.device)
+        else:
+            # 标准序列输出
+            encoder_hidden_states = encoder_outputs.last_hidden_state
+            encoder_attention_mask = attention_mask
+
+        # decoder 直接用池化特征
+        decoder_outputs = self.decoder(
+            input_ids=decoder_input_ids,
+            attention_mask=decoder_attention_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            past_key_values=past_key_values,
+            inputs_embeds=decoder_inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        # 损失计算与原版一致
+        loss = None
+        if labels is not None:
+            logits = decoder_outputs.logits
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+        if not return_dict:
+            output = (decoder_outputs.logits,) + decoder_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return Seq2SeqLMOutput(
+            loss=loss,
+            logits=decoder_outputs.logits,
+            past_key_values=decoder_outputs.past_key_values,
+            decoder_hidden_states=decoder_outputs.hidden_states,
+            cross_attentions=decoder_outputs.cross_attentions,
+            encoder_last_hidden_state=encoder_hidden_states,
+        )
 
 
 class JpegLMEncoderForClassification(JpegLMEncoder):

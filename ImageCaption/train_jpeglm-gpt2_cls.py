@@ -15,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms as T
 from transformers import EncoderDecoderModel, GPT2LMHeadModel, ViTFeatureExtractor, AutoTokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, default_data_collator, GenerationConfig, GPT2Config
 from torch.nn.utils.rnn import pad_sequence
-from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder, create_jpeglm_encoder_with_pooling
+from jpeglm.models.jpeglm_encoder import JpegLMEncoderDecoderModelWithPooling, create_jpeglm_encoder, create_jpeglm_encoder_with_pooling
 from sklearn.model_selection import train_test_split
 import datasets
 import multiprocessing as mp
@@ -170,7 +170,9 @@ gpt2_config.add_cross_attention = True
 gpt2 = GPT2LMHeadModel.from_pretrained(config.DECODER, config=gpt2_config)
 # 用JpegLMEncoder作为encoder
 encoder = create_jpeglm_encoder_with_pooling(config.ENCODER, pooling_strategy='last')
-model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
+model = JpegLMEncoderDecoderModelWithPooling(encoder=encoder, decoder=gpt2)
+# model = EncoderDecoderModel(encoder=encoder, decoder=gpt2)
+
 # 只设置结构/训练相关参数
 model.config.decoder_start_token_id = decoder_tokenizer.bos_token_id
 model.config.pad_token_id = decoder_tokenizer.pad_token_id
