@@ -1,24 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py \
-#   --output_dir ./checkpoints/prefixlm-jpeglm-gpt2-mnist-classification-lora \
-#   --train_batch_size 2 \
-#   --eval_batch_size 2 \
-#   --eval_strategy steps \
-#   --eval_steps 128 \
-#   --logging_steps 64 \
-#   --save_steps 512 \
-#   --warmup_steps 512 \
-#   --learning_rate 2e-4 \
-#   --num_train_epochs 3 \
-#   --save_total_limit 6 \
-#   --lr_scheduler_type linear \
-#   --gradient_accumulation_steps 8 \
-#   --report_to none \
-#   --bf16 \
-#   --max_length 1024 \
-#   --image_size 96 \
-#   --num_train_samples 6000 \
-#   --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 5 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import os
 import sys
@@ -29,7 +10,11 @@ from PIL import Image
 from tqdm import tqdm
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
-from transformers import AutoTokenizer, AutoConfig, GPT2LMHeadModel, GenerationConfig
+from transformers import AutoTokenizer, AutoConfig, GPT2LMHeadModel, GenerationConfig, PreTrainedModel, GenerationMixin
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
+from transformers.models.encoder_decoder.modeling_encoder_decoder import shift_tokens_right
+from torch.nn import CrossEntropyLoss
+from typing import Optional, Tuple, Union
 from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder_with_pooling
 from utils.data_utils import convert_img_to_bytes, create_preprocess_transform
 from datasets import load_dataset
@@ -37,7 +22,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output_dir', type=str, default="./checkpoints/prefixlm-jpeglm-gpt2-mnist-classification")
+parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/prefixlm-jpeglm-gpt2-mnist-classification")
 parser.add_argument('--train_batch_size', type=int, default=8)
 parser.add_argument('--eval_batch_size', type=int, default=8)
 parser.add_argument('--num_train_epochs', type=int, default=3)
@@ -100,95 +85,181 @@ jpeglm_encoder = create_jpeglm_encoder_with_pooling("/root/autodl-tmp/MLLM/model
 proj = torch.nn.Linear(jpeglm_encoder.config.hidden_size, gpt2_config.n_embd).to(device)
 
 # PrefixLM模型封装
-class PrefixLMForClassification(torch.nn.Module):
+class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
+    supports_gradient_checkpointing = True
+    main_input_name = "input_ids"
+    base_model_prefix = "prefix_lm"
 
     def __init__(self, encoder, proj, decoder, decoder_tokenizer, bos_token_id):
-        super().__init__()
+        # 使用decoder的config初始化PreTrainedModel
+        super().__init__(decoder.config)
         self.encoder = encoder
-        self.proj = proj
         self.decoder = decoder
+        self.proj = proj
         self.decoder_tokenizer = decoder_tokenizer
         self.bos_token_id = bos_token_id
 
-    @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        # 兼容transformers/peft的from_pretrained方法
-        # 这里只是示例，实际可根据需要补充参数
-        raise NotImplementedError("请用自定义初始化PrefixLMForClassification")
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.BoolTensor] = None,
+        encoder_outputs: Optional[Tuple[torch.FloatTensor]] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs,
+    ) -> Union[Tuple, Seq2SeqLMOutput]:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        kwargs_encoder = {argument: value for argument, value in kwargs.items() if not argument.startswith("decoder_")}
+        kwargs_decoder = {
+            argument[len("decoder_") :]: value for argument, value in kwargs.items() if argument.startswith("decoder_")
+        }
+        if "num_items_in_batch" in kwargs_encoder:
+            kwargs_decoder["num_items_in_batch"] = kwargs_encoder.pop("num_items_in_batch", None)
+
+        if encoder_outputs is None:
+            encoder_outputs = self.encoder(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                **kwargs_encoder,
+            )
+        elif isinstance(encoder_outputs, tuple):
+            encoder_outputs = BaseModelOutput(*encoder_outputs)
+
+        encoder_hidden_states = encoder_outputs[0]
+
+        # 投影encoder输出到decoder维度
+        encoder_hidden_states = self.proj(encoder_hidden_states)
+        # 取池化后的特征作为prefix，reshape为[batch, 1, hidden]
+        prefix_embeds = encoder_hidden_states.unsqueeze(1)  # [batch, 1, hidden]
+
+        if (labels is not None) and (decoder_input_ids is None and decoder_inputs_embeds is None):
+            decoder_input_ids = self.prepare_decoder_input_ids_from_labels(labels)
+            if decoder_attention_mask is None and decoder_input_ids is not None:
+                decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
+
+        # 如果有decoder_inputs_embeds，与prefix_embeds拼接
+        if decoder_inputs_embeds is not None:
+            final_inputs_embeds = torch.cat([prefix_embeds, decoder_inputs_embeds], dim=1)
+        else:
+            final_inputs_embeds = prefix_embeds
+
+        # Decode，确保不会同时传入input_ids和inputs_embeds
+        decoder_args = {
+            'attention_mask': decoder_attention_mask,
+            'output_attentions': output_attentions,
+            'output_hidden_states': output_hidden_states,
+            'use_cache': use_cache,
+            'past_key_values': past_key_values,
+            'return_dict': return_dict,
+            **kwargs_decoder,
+        }
+        
+        # 优先使用inputs_embeds（包含prefix）
+        if final_inputs_embeds is not None:
+            decoder_args['inputs_embeds'] = final_inputs_embeds
+        elif decoder_input_ids is not None:
+            decoder_args['input_ids'] = decoder_input_ids
+        decoder_outputs = self.decoder(**decoder_args)
+
+        # Compute loss independent from decoder
+        loss = None
+        if labels is not None:
+            logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
+            loss_fct = CrossEntropyLoss()
+            # 对于分类任务，只计算第一个位置的loss
+            if logits.dim() == 3:  # [batch, seq_len, vocab_size]
+                first_token_logits = logits[:, 0, :]  # [batch, vocab_size]
+                loss = loss_fct(first_token_logits, labels.view(-1))
+            else:
+                loss = loss_fct(logits.reshape(-1, self.decoder.config.vocab_size), labels.view(-1))
+
+        if not return_dict:
+            if loss is not None:
+                return (loss,) + decoder_outputs + encoder_outputs
+            else:
+                return decoder_outputs + encoder_outputs
+
+        return Seq2SeqLMOutput(
+            loss=loss,
+            logits=decoder_outputs.logits,
+            past_key_values=decoder_outputs.past_key_values,
+            decoder_hidden_states=decoder_outputs.hidden_states,
+            decoder_attentions=decoder_outputs.attentions,
+            cross_attentions=getattr(decoder_outputs, 'cross_attentions', None),
+            encoder_last_hidden_state=encoder_outputs.last_hidden_state,
+            encoder_hidden_states=encoder_outputs.hidden_states,
+            encoder_attentions=encoder_outputs.attentions,
+        )
+        
     def get_input_embeddings(self):
-        # 兼容PEFT/transformers的get_input_embeddings方法
-        return self.decoder.get_input_embeddings()
+        # 对encoder做LoRA时，返回encoder的embedding层
+        if hasattr(self.encoder, 'get_input_embeddings'):
+            return self.encoder.get_input_embeddings()
+        elif hasattr(self.encoder, 'embeddings'):
+            return self.encoder.embeddings
+        else:
+            return None
 
     def set_input_embeddings(self, value):
-        # 兼容PEFT/transformers的set_input_embeddings方法
-        self.decoder.set_input_embeddings(value)
+        if hasattr(self.encoder, 'set_input_embeddings'):
+            self.encoder.set_input_embeddings(value)
+        elif hasattr(self.encoder, 'embeddings'):
+            self.encoder.embeddings = value
 
-    @property
-    def base_model(self):
-        # 兼容PEFT的base_model属性
-        return self
+    def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
+        # 对于分类任务，labels是[batch_size]的一维张量，需要转换为[batch_size, 1]
+        if labels is None:
+            return None
+        if labels.dim() == 1:
+            labels = labels.unsqueeze(1)  # [batch_size] -> [batch_size, 1]
+        
+        # 确保config参数存在
+        pad_token_id = getattr(self.config, 'pad_token_id', self.decoder_tokenizer.pad_token_id or self.decoder_tokenizer.unk_token_id)
+        decoder_start_token_id = getattr(self.config, 'decoder_start_token_id', self.bos_token_id)
+        
+        return shift_tokens_right(labels, pad_token_id, decoder_start_token_id)
 
-    @property
-    def model(self):
-        # 兼容PEFT的model属性
-        return self
-
+    def get_encoder(self):
+        return self.encoder
+    
+    def get_decoder(self):
+        return self.decoder
+    
+    def _prepare_encoder_decoder_kwargs_for_generation(self, input_ids, **model_kwargs):
+        # 兼容transformers/PEFT生成流程，直接 passthrough
+        return model_kwargs
     def prepare_inputs_for_generation(self, input_ids, **kwargs):
-        # 兼容PEFT/transformers的prepare_inputs_for_generation方法
-        # 直接委托给decoder处理
-        return self.decoder.prepare_inputs_for_generation(input_ids, **kwargs)
+        # 兼容transformers/PEFT生成流程，直接 passthrough
+        return {"input_ids": input_ids, **kwargs}
 
-    def resize_token_embeddings(self, new_num_tokens):
-        # 兼容transformers的resize_token_embeddings方法
-        return self.decoder.resize_token_embeddings(new_num_tokens)
+    def get_output_embeddings(self):
+        return self.decoder.get_output_embeddings()
 
-    def tie_weights(self):
-        # 兼容transformers的tie_weights方法
-        if hasattr(self.decoder, 'tie_weights'):
-            self.decoder.tie_weights()
+    def set_output_embeddings(self, new_embeddings):
+        return self.decoder.set_output_embeddings(new_embeddings)
 
-    def can_generate(self):
-        # 兼容transformers的can_generate方法
-        return hasattr(self.decoder, 'generate')
+    def resize_token_embeddings(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Resizing the embedding layers via the PrefixLMForClassification directly is not supported. Please use the"
+            " respective methods of the wrapped objects (model.encoder.resize_token_embeddings(...) or"
+            " model.decoder.resize_token_embeddings(...))"
+        )
 
-    @property
-    def config(self):
-        # 兼容transformers的config属性
-        return self.decoder.config
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        batch_size = input_ids.size(0)
-        # 允许encoder参数梯度传播
-        encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        pooled = encoder_outputs.last_hidden_state
-        prefix_embeds = self.proj(pooled).unsqueeze(1)  # [batch, 1, hidden]
-        
-        # 构建decoder输入：[prefix] 
-        # 让模型在prefix位置直接预测分类token（不需要BOS）
-        inputs_embeds = prefix_embeds  # [batch, 1, hidden]
-        
-        # 损失计算：让模型直接预测分类token
-        if labels is not None:
-            # labels形状应该与sequence长度匹配
-            labels_for_loss = labels.unsqueeze(1)  # [batch, 1]
-            outputs = self.decoder(inputs_embeds=inputs_embeds, labels=labels_for_loss)
-        else:
-            outputs = self.decoder(inputs_embeds=inputs_embeds)
-        
-        return outputs
-
-    def generate(self, input_ids, attention_mask):
-        batch_size = input_ids.size(0)
-        with torch.no_grad():
-            encoder_outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-            pooled = encoder_outputs.last_hidden_state
-        prefix_embeds = self.proj(pooled).unsqueeze(1)  # [batch, 1, hidden]
-        inputs_embeds = prefix_embeds
-        outputs = self.decoder(inputs_embeds=inputs_embeds)
-        logits = outputs.logits[:, 0, :]  # 取第一个（也是唯一的）位置的logits
-        pred = torch.argmax(logits, dim=-1)
-        return pred
+    def _reorder_cache(self, past_key_values, beam_idx):
+        # apply decoder cache reordering here
+        return self.decoder._reorder_cache(past_key_values, beam_idx)
 
 # 数据集
 class MNISTJpegBytesPrefixDataset(Dataset):
@@ -236,7 +307,11 @@ def collate_fn(batch):
 # MySeq2SeqTrainer集成
 from hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArguments
 bos_token_id = decoder_tokenizer.bos_token_id or decoder_tokenizer.eos_token_id or 50256
+
+# 在模型外部确保特殊token id全部设置到config
 model = PrefixLMForClassification(jpeglm_encoder, proj, gpt2_model, decoder_tokenizer, bos_token_id)
+model.config.decoder_start_token_id = bos_token_id
+model.config.pad_token_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id
 
 def compute_metrics(pred):
     labels = pred.label_ids  # [batch_size] - 包含GPT2 token IDs
@@ -288,35 +363,20 @@ my_args = MySeq2SeqTrainingArguments(
     fp16=args.fp16,
     bf16=args.bf16,
 )
-
-# 只对encoder开启梯度检查点
-if hasattr(model.encoder, 'gradient_checkpointing_enable'):
-    model.encoder.gradient_checkpointing_enable()
+    
 
 # LoRA配置
 
 # 获取GPT2所有关键模块名称，作为modules_to_save
-gpt2_modules = [
-    "decoder.transformer.wte",      # word token embeddings
-    "decoder.transformer.wpe",      # position embeddings
-    "decoder.transformer.ln_f",     # final layer norm
-    "decoder.lm_head",              # language modeling head
+h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
+gpt2_modules = h_modules + [
+    "decoder.transformer.ln_f",
+    "decoder.lm_head",
 ]
-
-# 添加所有transformer层
-for i in range(model.decoder.config.n_layer):
-    gpt2_modules.extend([
-        f"decoder.transformer.h.{i}.ln_1",
-        f"decoder.transformer.h.{i}.attn.c_attn",
-        f"decoder.transformer.h.{i}.attn.c_proj",
-        f"decoder.transformer.h.{i}.ln_2", 
-        f"decoder.transformer.h.{i}.mlp.c_fc",
-        f"decoder.transformer.h.{i}.mlp.c_proj",
-    ])
 
 # 添加其他需要保存的模块
 modules_to_save = gpt2_modules + [
-    "proj",  # 投影层
+    # "proj",  # 投影层
 ]
 
 lora_config = LoraConfig(
@@ -329,11 +389,11 @@ lora_config = LoraConfig(
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
         "gate_proj", "up_proj", "down_proj",     # MLP层  
     ],
-    # modules_to_save=modules_to_save,  # 保存GPT2全部模块和投影层
+    modules_to_save=modules_to_save,  # 保存GPT2全部模块和投影层
     lora_dropout=0.1,
 )
 
-# 应用LoRA
+model.encoder.gradient_checkpointing_enable()
 model = get_peft_model(model, lora_config)
 
 # 打印LoRA训练参数统计
