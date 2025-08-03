@@ -113,9 +113,6 @@ class JpegLMEncoder(PreTrainedModel):
         Returns:
             BaseModelOutput: 包含 last_hidden_state 和 hidden_states
         """
-        # VisionEncoderDecoderModel 可能会以 pixel_values 的名字传递 input_ids
-        if input_ids is None and 'pixel_values' in kwargs:
-            input_ids = kwargs.pop('pixel_values')
         
         # 获取transformer输出
         outputs = self.model(
@@ -137,7 +134,9 @@ class JpegLMEncoder(PreTrainedModel):
         )
 
 
-class JpegLMEncoderForClassification(PreTrainedModel):
+
+# 重构后的分类模型，继承自JpegLMEncoder
+class JpegLMEncoderForClassification(JpegLMEncoder):
     """
     将 JpegLM 改造成 Encoder 架构的分类模型
     支持多种池化策略和自定义分类头
@@ -145,131 +144,32 @@ class JpegLMEncoderForClassification(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        
-        # 加载预训练的 transformer 层（encoder 模式）
-        self.model = AutoModel.from_pretrained(
-            config.name_or_path,
-            config=config
-        )
-        
-        # 分类头组件
-        self.dropout = nn.Dropout(config.classifier_dropout if hasattr(config, 'classifier_dropout') else 0.3)
+        self.dropout = nn.Dropout(getattr(config, 'classifier_dropout', 0.1))
         self.pre_classifier = nn.LayerNorm(config.hidden_size)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        
-        # 池化策略
-        self.pooling_strategy = getattr(config, 'pooling_strategy', 'last')
-        
-        # 执行初始化
-        self.post_init()
         self._init_classifier_weights()
-        
-    def gradient_checkpointing_enable(self):
-        if hasattr(self.model, 'gradient_checkpointing_enable'):
-            self.model.gradient_checkpointing_enable()
-        elif hasattr(self.model, 'gradient_checkpointing') and hasattr(self.model, '_set_gradient_checkpointing'):
-            self.model._set_gradient_checkpointing(enable=True)
-        else:
-            raise ValueError(f"{self.__class__.__name__} does not support gradient checkpointing.")
-        print("✓ JpegLMEncoderForClassification 已启用梯度检查点")
-
-    def gradient_checkpointing_disable(self):
-        if hasattr(self.model, 'gradient_checkpointing_disable'):
-            self.model.gradient_checkpointing_disable()
-        elif hasattr(self.model, 'gradient_checkpointing') and hasattr(self.model, '_set_gradient_checkpointing'):
-            self.model._set_gradient_checkpointing(enable=False)
-        else:
-            raise ValueError(f"{self.__class__.__name__} does not support gradient checkpointing.")
-        print("✓ JpegLMEncoderForClassification 已禁用梯度检查点")
 
     def _init_classifier_weights(self):
-        """自定义初始化分类头权重，确保初始 logits 接近 0"""
         nn.init.normal_(self.classifier.weight, mean=0.0, std=0.02)
         if self.classifier.bias is not None:
             nn.init.zeros_(self.classifier.bias)
 
-    def get_input_embeddings(self):
-        return self.model.get_input_embeddings()
-
-    def set_input_embeddings(self, embeddings):
-        self.model.set_input_embeddings(embeddings)
-
-    def _pool_hidden_states(self, sequence_output, attention_mask):
-        """
-        根据策略池化隐藏状态
-        
-        Args:
-            sequence_output: [batch_size, seq_len, hidden_size]
-            attention_mask: [batch_size, seq_len]
-            
-        Returns:
-            pooled_output: [batch_size, hidden_size]
-        """
-        if self.pooling_strategy == "mean":
-            # 平均池化（排除padding）
-            mask_expanded = attention_mask.unsqueeze(-1).expand(sequence_output.size()).float()
-            sum_embeddings = torch.sum(sequence_output * mask_expanded, 1)
-            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-            pooled_output = sum_embeddings / sum_mask
-            
-        elif self.pooling_strategy == "max":
-            # 最大池化
-            pooled_output = torch.max(sequence_output, dim=1)[0]
-            
-        elif self.pooling_strategy == "cls":
-            # 使用第一个token ([CLS] 风格)
-            pooled_output = sequence_output[:, 0]
-            
-        else:  # last (default for GPT-style models)
-            # 使用最后一个非padding token
-            seq_lengths = attention_mask.sum(dim=1) - 1
-            batch_size = sequence_output.size(0)
-            pooled_output = sequence_output[torch.arange(batch_size), seq_lengths]
-            
-        return pooled_output
-
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        """
-        前向传播
-        
-        Args:
-            input_ids: [batch_size, seq_len]
-            attention_mask: [batch_size, seq_len]
-            labels: [batch_size] (可选，用于计算损失)
-            
-        Returns:
-            dict: 包含 loss (如果提供labels) 和 logits
-        """
-        # 获取transformer输出
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=False
-        )
-        
+        # 复用父类的forward，获取hidden states
+        outputs = super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
         sequence_output = outputs.last_hidden_state
-        
-        # 池化
         pooled_output = self._pool_hidden_states(sequence_output, attention_mask)
-        
-        # 分类头
         pooled_output = self.pre_classifier(pooled_output)
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
-        
-        # 计算损失
         loss = None
         if labels is not None:
-            # 使用 reduction='mean' 确保损失正确平均，适配梯度累积
             loss_fct = nn.CrossEntropyLoss(reduction='mean')
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-        
         return SequenceClassifierOutput(
             loss=loss,
             logits=logits,
-            hidden_states=outputs.hidden_states if outputs.hidden_states else None,
+            hidden_states=outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
             attentions=getattr(outputs, 'attentions', None)
         )
 
@@ -404,7 +304,7 @@ class JpegLMSeq2SeqModel(PreTrainedModel, GenerationMixin):
                                encoder_last_hidden_state=hs)
 
 
-def create_jpeglm_encoder(model_name_or_path, pooling_strategy='last', **kwargs):
+def create_jpeglm_encoder(model_name_or_path, pooling_strategy='mean', **kwargs):
     print(f"正在加载 JpegLM 配置: {model_name_or_path}")
     config = AutoConfig.from_pretrained(model_name_or_path)
     
@@ -426,44 +326,32 @@ def create_jpeglm_encoder(model_name_or_path, pooling_strategy='last', **kwargs)
     
     return model
 
-def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_strategy='last', **kwargs):
+
+def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_strategy='mean', **kwargs):
     """
-    创建 JpegLM Encoder 分类模型
-    
+    创建 JpegLM Encoder 分类模型（继承自JpegLMEncoder）
     Args:
         model_name_or_path: 预训练模型路径
         num_labels: 分类类别数
         pooling_strategy: 池化策略 ('mean', 'max', 'cls', 'last')
         **kwargs: 其他配置参数
-        
     Returns:
         JpegLMEncoderForClassification: 配置好的分类模型
     """
     config = AutoConfig.from_pretrained(model_name_or_path)
-    
-    # 基础配置
     config.num_labels = num_labels
     config.use_cache = False
-    
-    # Encoder 模式配置
     config.is_decoder = False
     config.add_cross_attention = False
-    
-    # 分类相关配置
     config.pooling_strategy = pooling_strategy
     config.name_or_path = model_name_or_path
-    
-    # 可选配置
     if 'classifier_dropout' in kwargs:
         config.classifier_dropout = kwargs['classifier_dropout']
-    
     model = JpegLMEncoderForClassification(config)
-    
     print(f"✓ 已创建 JpegLM Encoder 分类模型")
     print(f"  - 类别数: {num_labels}")
     print(f"  - 池化策略: {pooling_strategy}")
     print(f"  - 隐藏维度: {config.hidden_size}")
-    
     return model
 
 def create_seq2seq_model(

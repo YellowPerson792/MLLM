@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from transformers import EncoderDecoderModel, AutoTokenizer, GenerationConfig, GPT2Config, GPT2LMHeadModel
 from jpeglm.models.jpeglm_encoder import create_jpeglm_encoder
@@ -8,9 +10,9 @@ from peft import PeftModel
 from PIL import Image
 
 # 配置
-encoder_path = "/root/autodl-fs/models/jpeg-lm"
+encoder_path = "/root/autodl-tmp/MLLM/models/jpeg-lm"
 decoder_path = "gpt2"
-model_ckpt = "/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-mnist-classification/checkpoint-2560"  # 你的模型保存路径
+model_ckpt = "/root/autodl-tmp/MLLM/checkpoints/jpeglm-gpt2-mnist-classification/checkpoint-512"  # 你的模型保存路径
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # 加载分词器
@@ -30,7 +32,7 @@ base_model.config.eos_token_id = decoder_tokenizer.eos_token_id
 base_model.config.vocab_size = base_model.config.decoder.vocab_size
 base_model.main_input_name = "input_ids"
 generation_config = GenerationConfig(
-    max_new_tokens=1,
+    max_new_tokens=10,
     num_beams=1,
     no_repeat_ngram_size=3,
     decoder_start_token_id=base_model.config.decoder_start_token_id,
