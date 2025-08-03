@@ -90,6 +90,53 @@ class JpegLMEncoder(PreTrainedModel):
             hidden_states=outputs.hidden_states,
             attentions=getattr(outputs, 'attentions', None)
         )
+        
+class JpegLMEncoderWithPooling(JpegLMEncoder):
+    """
+    池化版 JpegLMEncoder，forward 直接输出池化特征
+    支持 mean/max/cls/last 池化
+    """
+    def __init__(self, config):
+        super().__init__(config)
+        self.pooling_strategy = getattr(config, 'pooling_strategy', 'last')
+
+    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+        # 获取 transformer 输出
+        encoder_outputs = super().forward(input_ids=input_ids, attention_mask=attention_mask, **kwargs)
+        sequence_output = encoder_outputs.last_hidden_state
+
+        # attention_mask 转 float 并扩展维度
+        if attention_mask is not None:
+            mask = attention_mask.float()
+        else:
+            mask = torch.ones(sequence_output.shape[:2], device=sequence_output.device)
+
+        # 池化
+        if self.pooling_strategy == "mean":
+            mask_expanded = mask.unsqueeze(-1).expand(sequence_output.size())
+            sum_embeddings = torch.sum(sequence_output * mask_expanded, 1)
+            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+            pooled_output = sum_embeddings / sum_mask
+            pooled_mask = (sum_mask > 0).long()  # [batch_size]
+        elif self.pooling_strategy == "max":
+            pooled_output = torch.max(sequence_output, dim=1)[0]
+            pooled_mask = torch.ones(sequence_output.size(0), dtype=torch.long, device=sequence_output.device)  # [batch_size]
+        elif self.pooling_strategy == "cls":
+            pooled_output = sequence_output[:, 0]
+            pooled_mask = mask[:, 0].long() if mask.dim() == 2 else torch.ones(sequence_output.size(0), dtype=torch.long, device=sequence_output.device)
+        else:  # last
+            seq_lengths = mask.sum(dim=1) - 1
+            batch_size = sequence_output.size(0)
+            pooled_output = sequence_output[torch.arange(batch_size), seq_lengths.long()]
+            pooled_mask = torch.ones(batch_size, dtype=torch.long, device=sequence_output.device)  # [batch_size]
+
+        # 输出规范化：last_hidden_state为池化特征，attention_mask与池化shape匹配，其余参数保持一致
+        return BaseModelOutput(
+            last_hidden_state=pooled_output,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=getattr(encoder_outputs, 'attentions', None),
+            attention_mask=pooled_mask
+        )
 
 
 class JpegLMEncoderForClassification(JpegLMEncoder):
@@ -296,6 +343,30 @@ def create_jpeglm_encoder(model_name_or_path, pooling_strategy='last', **kwargs)
     print(f"  - 池化策略: {pooling_strategy}")
     print(f"  - 隐藏维度: {config.hidden_size}")
     
+
+    return model
+
+def create_jpeglm_encoder_with_pooling(model_name_or_path, pooling_strategy='last', **kwargs):
+    """
+    创建池化版 JpegLMEncoder，forward 直接输出池化特征
+    Args:
+        model_name_or_path: 预训练模型路径
+        pooling_strategy: 池化策略 ('mean', 'max', 'cls', 'last')
+        **kwargs: 其他配置参数
+    Returns:
+        JpegLMEncoderWithPooling: 池化特征输出模型
+    """
+    print(f"正在加载 JpegLM 池化版配置: {model_name_or_path}")
+    config = AutoConfig.from_pretrained(model_name_or_path)
+    config.is_decoder = False
+    config.add_cross_attention = False
+    config.use_cache = False
+    config.pooling_strategy = pooling_strategy
+    config.name_or_path = model_name_or_path
+    model = JpegLMEncoderWithPooling(config)
+    print(f"✓ 已创建 JpegLM 池化版 Encoder")
+    print(f"  - 池化策略: {pooling_strategy}")
+    print(f"  - 隐藏维度: {config.hidden_size}")
     return model
 
 def create_jpeglm_encoder_cls_model(model_name_or_path, num_labels=10, pooling_strategy='last', **kwargs):
@@ -498,3 +569,4 @@ def load_jpeglm_encoder_model(model_path, **kwargs):
     except Exception as e:
         print(f"❌ 加载模型失败: {e}")
         raise e
+
