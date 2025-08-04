@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to wandb --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import os
 import sys
@@ -143,14 +143,13 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         encoder_hidden_states = self.proj(encoder_hidden_states)
         # 取池化后的特征作为prefix，reshape为[batch, 1, hidden]
         prefix_embeds = encoder_hidden_states.unsqueeze(1)  # [batch, 1, hidden]
-
-        if (labels is not None) and (decoder_input_ids is None and decoder_inputs_embeds is None):
-            decoder_input_ids = self.prepare_decoder_input_ids_from_labels(labels)
-            if decoder_attention_mask is None and decoder_input_ids is not None:
-                decoder_attention_mask = decoder_input_ids.new_tensor(decoder_input_ids != self.config.pad_token_id)
-
-        # 如果有decoder_inputs_embeds，与prefix_embeds拼接
-        if decoder_inputs_embeds is not None:
+        labels = labels.unsqueeze(1) if labels is not None else labels
+        # 直接将prefix_embeds与labels的embeds拼接
+        if labels is not None:
+            # labels为token id序列，获取其embedding
+            label_embeds = self.decoder.transformer.wte(labels)
+            final_inputs_embeds = torch.cat([prefix_embeds, label_embeds], dim=1)
+        elif decoder_inputs_embeds is not None:
             final_inputs_embeds = torch.cat([prefix_embeds, decoder_inputs_embeds], dim=1)
         else:
             final_inputs_embeds = prefix_embeds
@@ -177,13 +176,14 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         loss = None
         if labels is not None:
             logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-            loss_fct = CrossEntropyLoss()
-            # 对于分类任务，只计算第一个位置的loss
-            if logits.dim() == 3:  # [batch, seq_len, vocab_size]
-                first_token_logits = logits[:, 0, :]  # [batch, vocab_size]
-                loss = loss_fct(first_token_logits, labels.view(-1))
-            else:
-                loss = loss_fct(logits.reshape(-1, self.decoder.config.vocab_size), labels.view(-1))
+            # label_len = labels.size(1)
+            prediction_logits = logits[:, 0, :]  # [batch, vocab_size]
+            # 展平
+            shift_logits = prediction_logits.contiguous().view(-1, prediction_logits.size(-1))
+            shift_labels = labels.contiguous().view(-1)
+            pred = torch.argmax(shift_logits, dim=-1)
+            print(f"[DEBUG] pred: {pred}, shift_labels: {shift_labels}")
+            loss = CrossEntropyLoss()(shift_logits, shift_labels)
 
         if not return_dict:
             if loss is not None:
@@ -432,7 +432,7 @@ class ClsTrainer(MySeq2SeqTrainer):
                 outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss
                 logits = outputs.logits
-                preds = logits.argmax(dim=-1)
+                preds = logits.argmax(dim=-1)[:, 1]
                 all_preds.append(preds.detach().cpu())
                 all_labels.append(labels.detach().cpu())
                 total_loss += loss.item() * labels.size(0)
@@ -449,9 +449,10 @@ class ClsTrainer(MySeq2SeqTrainer):
         all_labels = torch.cat(all_labels, dim=0).numpy()  # [N]
         # 直接计算准确率，不再调用compute_metrics
         correct = (all_preds == all_labels).sum()
-        total = len(all_labels)
-        accuracy = correct / total if total > 0 else 0.0
-        metrics = {"accuracy": round(float(accuracy), 4)}
+        total = all_labels.shape[0]
+        # 修正准确率计算，确保为比例（0~1），不是数量
+        accuracy = float(correct) / float(total) if total > 0 else 0.0
+        metrics = {"accuracy": round(accuracy, 4)}
         avg_loss = total_loss / total if total > 0 else 0.0
         # 统一打印前10条预测和真实token
         if debug_print_samples:
