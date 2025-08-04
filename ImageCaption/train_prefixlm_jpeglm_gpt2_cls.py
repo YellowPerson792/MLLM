@@ -433,6 +433,7 @@ class ClsTrainer(MySeq2SeqTrainer):
                 loss = outputs.loss
                 logits = outputs.logits
                 preds = logits.argmax(dim=-1)[:, 1]
+                preds = logits.argmax(dim=-1)[:, 1]
                 all_preds.append(preds.detach().cpu())
                 all_labels.append(labels.detach().cpu())
                 total_loss += loss.item() * labels.size(0)
@@ -449,6 +450,10 @@ class ClsTrainer(MySeq2SeqTrainer):
         all_labels = torch.cat(all_labels, dim=0).numpy()  # [N]
         # 直接计算准确率，不再调用compute_metrics
         correct = (all_preds == all_labels).sum()
+        total = all_labels.shape[0]
+        # 修正准确率计算，确保为比例（0~1），不是数量
+        accuracy = float(correct) / float(total) if total > 0 else 0.0
+        metrics = {"accuracy": round(accuracy, 4)}
         total = all_labels.shape[0]
         # 修正准确率计算，确保为比例（0~1），不是数量
         accuracy = float(correct) / float(total) if total > 0 else 0.0
