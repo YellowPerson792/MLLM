@@ -70,11 +70,6 @@ for word in tiny_vocab:
         print(f"警告: '{word}' 被tokenize为多个token: {token_ids}")
         gpt2_token_ids[word] = token_ids[0]  # 取第一个token
 
-print("数字词汇到GPT2 token ID的映射:")
-for word, token_id in gpt2_token_ids.items():
-    decoded = decoder_tokenizer.decode([token_id])
-    print(f"  {word} -> token_id: {token_id}, decoded: '{decoded}'")
-
 gpt2_config = AutoConfig.from_pretrained("gpt2")
 gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
 
@@ -143,7 +138,7 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         encoder_hidden_states = self.proj(encoder_hidden_states)
         # 取池化后的特征作为prefix，reshape为[batch, 1, hidden]
         prefix_embeds = encoder_hidden_states.unsqueeze(1)  # [batch, 1, hidden]
-        labels = labels.unsqueeze(1) if labels is not None else labels
+        # labels = labels.unsqueeze(1) if labels is not None else labels
         # 直接将prefix_embeds与labels的embeds拼接
         if labels is not None:
             # labels为token id序列，获取其embedding
@@ -182,7 +177,7 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
             shift_logits = prediction_logits.contiguous().view(-1, prediction_logits.size(-1))
             shift_labels = labels.contiguous().view(-1)
             pred = torch.argmax(shift_logits, dim=-1)
-            print(f"[DEBUG] pred: {pred}, shift_labels: {shift_labels}")
+            # print(f"[DEBUG] pred: {pred}, shift_labels: {shift_labels}")
             loss = CrossEntropyLoss()(shift_logits, shift_labels)
 
         if not return_dict:
@@ -224,6 +219,7 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
             return None
         if labels.dim() == 1:
             labels = labels.unsqueeze(1)  # [batch_size] -> [batch_size, 1]
+        print("!!!!!!!!!!!!!!!!!!")
         
         # 确保config参数存在
         pad_token_id = getattr(self.config, 'pad_token_id', self.decoder_tokenizer.pad_token_id or self.decoder_tokenizer.unk_token_id)
@@ -285,8 +281,9 @@ class MNISTJpegBytesPrefixDataset(Dataset):
         input_ids = input_ids[:self.max_length]
         # 使用GPT2 tokenizer中的真实token ID
         caption = self.digit_to_text[label]
-        label_token_id = gpt2_token_ids[caption]
-        return {"input_ids": torch.tensor(input_ids), "label_id": torch.tensor(label_token_id)}
+        # label_token_id = gpt2_token_ids[caption]
+        # label_token_id = self.decoder_tokenizer.encode(caption, add_special_tokens=False)
+        return {"input_ids": torch.tensor(input_ids), "caption": caption}
 
 # 加载MNIST数据集
 mnist_dataset = load_dataset("ylecun/mnist")
@@ -298,10 +295,12 @@ val_dataset = MNISTJpegBytesPrefixDataset(test_data, encoder_tokenizer, decoder_
 
 def collate_fn(batch):
     input_ids = [item["input_ids"] for item in batch]
-    label_ids = [item["label_id"] for item in batch]
+    captions = [item["caption"] for item in batch]
+    label_ids = [torch.tensor(decoder_tokenizer.encode(caption, add_special_tokens=False)) for caption in captions]
     input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=encoder_tokenizer.pad_token_id)
     attention_mask = (input_ids_padded != encoder_tokenizer.pad_token_id).long()
     label_ids = torch.stack(label_ids)
+    # label_ids = label_ids.unsqueeze(1)  # [batch, 1]
     return {"input_ids": input_ids_padded, "attention_mask": attention_mask, "labels": label_ids}
 
 # MySeq2SeqTrainer集成
@@ -312,38 +311,6 @@ bos_token_id = decoder_tokenizer.bos_token_id or decoder_tokenizer.eos_token_id 
 model = PrefixLMForClassification(jpeglm_encoder, proj, gpt2_model, decoder_tokenizer, bos_token_id)
 model.config.decoder_start_token_id = bos_token_id
 model.config.pad_token_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id
-
-def compute_metrics(pred):
-    labels = pred.label_ids  # [batch_size] - 包含GPT2 token IDs
-    preds = pred.predictions # [batch_size, seq_len, vocab_size] 或 [batch_size, seq_len]
-    
-    # 处理预测结果：如果是logits，取argmax；如果已经是token ids，直接使用
-    if len(preds.shape) == 3:  # logits: [batch_size, seq_len, vocab_size]
-        pred_token_ids = np.argmax(preds, axis=-1)  # [batch_size, seq_len]
-    else:  # token ids: [batch_size, seq_len]
-        pred_token_ids = preds
-    
-    # 取第1个位置的预测（现在序列长度为1）
-    if pred_token_ids.shape[1] > 0:
-        pred_tokens = pred_token_ids[:, 0]  # [batch_size]
-    else:
-        pred_tokens = np.zeros_like(labels)  # fallback
-    
-    # 计算准确率 - 比较GPT2 token IDs
-    correct = (pred_tokens == labels).sum()
-    total = len(labels)
-    accuracy = correct / total if total > 0 else 0.0
-    
-    # 调试信息：打印前几个预测和标签
-    if len(pred_tokens) > 0:
-        print(f"[DEBUG] 前3个预测token IDs: {pred_tokens[:3]}")
-        print(f"[DEBUG] 前3个真实token IDs: {labels[:3]}")
-        for i in range(min(3, len(pred_tokens))):
-            pred_word = decoder_tokenizer.decode([pred_tokens[i]])
-            label_word = decoder_tokenizer.decode([labels[i]])
-            print(f"[DEBUG] 样本{i}: 预测='{pred_word}' (id:{pred_tokens[i]}), 真实='{label_word}' (id:{labels[i]})")
-    
-    return {"accuracy": round(float(accuracy), 4)}
 
 my_args = MySeq2SeqTrainingArguments(
     output_dir=args.output_dir,
@@ -386,6 +353,7 @@ lora_config = LoraConfig(
         # Encoder中的线性层 (JpegLM相关)
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
         "gate_proj", "up_proj", "down_proj",     # MLP层  
+        # "proj",  # 投影层
     ],
     modules_to_save=modules_to_save,  # 保存GPT2全部模块和投影层
     lora_dropout=0.1,
@@ -399,17 +367,17 @@ print("\n==== LoRA训练参数统计 ====")
 model.print_trainable_parameters()
 
 # 详细打印各层参数状态
-print("\n==== 各层参数 requires_grad 状态 ====")
-trainable_params = 0
-total_params = 0
-for name, param in model.named_parameters():
-    total_params += param.numel()
-    if param.requires_grad:
-        trainable_params += param.numel()
-        print(f"{name:80} requires_grad={param.requires_grad} ({param.numel():,} params)")
+# print("\n==== 各层参数 requires_grad 状态 ====")
+# trainable_params = 0
+# total_params = 0
+# for name, param in model.named_parameters():
+#     total_params += param.numel()
+#     if param.requires_grad:
+#         trainable_params += param.numel()
+#         print(f"{name:80} requires_grad={param.requires_grad} ({param.numel():,} params)")
 
-print(f"\n总训练参数: {trainable_params:,} / {total_params:,} ({100 * trainable_params / total_params:.2f}%)")
-print("==== END ====")
+# print(f"\n总训练参数: {trainable_params:,} / {total_params:,} ({100 * trainable_params / total_params:.2f}%)")
+# print("==== END ====")
 
 
 ###############################################################
@@ -460,6 +428,7 @@ class ClsTrainer(MySeq2SeqTrainer):
             for idx, (pred_word, pred_token, label_word, label_token) in enumerate(debug_print_samples):
                 print(f"[EVAL DEBUG] 样本{idx+1}: 预测='{pred_word}' (id:{pred_token}), 真实='{label_word}' (id:{label_token})")
         print(f"[Custom Eval] Loss: {avg_loss:.4f}  Accuracy: {accuracy:.4f}  (Total: {total})")
+        self.model.train()
         return avg_loss, metrics
 
 trainer = ClsTrainer(
@@ -468,7 +437,7 @@ trainer = ClsTrainer(
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     tokenizer=decoder_tokenizer,
-    compute_metrics=compute_metrics,
+    # compute_metrics=compute_metrics,
     data_collator=collate_fn
 )
 
