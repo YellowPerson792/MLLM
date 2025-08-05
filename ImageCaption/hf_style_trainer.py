@@ -50,7 +50,7 @@ class MySeq2SeqTrainer:
         train_loader = DataLoader(
             self.train_dataset,
             batch_size=args.train_batch_size,
-            shuffle=True,
+            shuffle=False,
             collate_fn=self.data_collator if self.data_collator is not None else None
         )
         val_loader = DataLoader(
@@ -226,6 +226,7 @@ class MySeq2SeqTrainer:
         for epoch in range(start_epoch, args.num_train_epochs):
             epoch_loss = 0
             optimizer.zero_grad()
+            loss_accumulated = 0.0
             for step, batch in enumerate(train_loader):
                 # 跳过已完成的 step（仅在恢复时生效）
                 if epoch == start_epoch and step < start_step_in_epoch:
@@ -244,6 +245,7 @@ class MySeq2SeqTrainer:
                     scaler.scale(loss).backward()
                 else:
                     loss.backward()
+                loss_accumulated += loss.item()
                 if (step + 1) % args.gradient_accumulation_steps == 0 or (step + 1) == len(train_loader):
                     grad_norm = self._compute_grad_norm()
                     if use_amp:
@@ -265,7 +267,7 @@ class MySeq2SeqTrainer:
                     "lr": f"{scheduler.get_last_lr()[0]:.2e}"
                 })
                 if args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                    current_loss = loss.item() * args.gradient_accumulation_steps
+                    current_loss = loss_accumulated
                     # 计算真实epoch进度
                     real_epoch = epoch + (step + 1) / len(train_loader)
                     log_str = (
@@ -286,6 +288,8 @@ class MySeq2SeqTrainer:
                         self._tb_writer.add_scalar('train/loss', current_loss, global_step)
                         self._tb_writer.add_scalar('train/grad_norm', grad_norm, global_step)
                         self._tb_writer.add_scalar('train/learning_rate', scheduler.get_last_lr()[0], global_step)
+                if (step + 1) % args.gradient_accumulation_steps == 0: 
+                        loss_accumulated = 0.0
                 if args.eval_strategy == "steps" and args.eval_steps > 0 and global_step % args.eval_steps == 0 and val_loader is not None:
                     val_result = self.evaluate(val_loader, desc=f"Eval@Step{global_step}")
                     if isinstance(val_result, tuple):
