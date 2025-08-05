@@ -46,14 +46,9 @@ args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# MNIST数字标签映射到文本
-digit_to_text = {
-    0: "zero", 1: "one", 2: "two", 3: "three", 4: "four",
-    5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"
-}
-tiny_vocab = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
-word2id = {w: i for i, w in enumerate(tiny_vocab)}
-id2word = {i: w for i, w in enumerate(tiny_vocab)}
+# MNIST数字标签映射到完整句子
+cls_vocab = [f"{w} this is" for w in ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]]
+digit_to_text = {i: s for i, s in enumerate(cls_vocab)}
 
 # 加载tokenizer和模型
 encoder_tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/MLLM/models/jpeg-lm")
@@ -62,7 +57,7 @@ decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
 
 # 将tiny_vocab中的单词转换为GPT2 tokenizer中的token IDs
 gpt2_token_ids = {}
-for word in tiny_vocab:
+for word in cls_vocab:
     token_ids = decoder_tokenizer.encode(word, add_special_tokens=False)
     if len(token_ids) == 1:
         gpt2_token_ids[word] = token_ids[0]
@@ -171,9 +166,10 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         loss = None
         if labels is not None:
             logits = decoder_outputs.logits if return_dict else decoder_outputs[0]
-            # label_len = labels.size(1)
-            prediction_logits = logits[:, 0, :]  # [batch, vocab_size]
+            label_len = labels.size(1)
+            prediction_logits = logits[:, :label_len, :]  # [batch, seq_len, vocab_size]
             # 展平
+            # print(f"[DEBUG] prediction_logits shape: {prediction_logits.shape}, label: {labels}")
             shift_logits = prediction_logits.contiguous().view(-1, prediction_logits.size(-1))
             shift_labels = labels.contiguous().view(-1)
             pred = torch.argmax(shift_logits, dim=-1)
@@ -274,7 +270,7 @@ class MNISTJpegBytesPrefixDataset(Dataset):
         item = self.dataset[idx]
         label = item['label']
         caption = self.digit_to_text[label]
-        img = item['image'].convert("RGB")
+        img = item['image'].convert("RGB") 
         img = self.transform(img)
         jpeg_str = convert_img_to_bytes(img)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
@@ -298,10 +294,11 @@ def collate_fn(batch):
     captions = [item["caption"] for item in batch]
     label_ids = [torch.tensor(decoder_tokenizer.encode(caption, add_special_tokens=False)) for caption in captions]
     input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=encoder_tokenizer.pad_token_id)
+    label_ids_padded = pad_sequence(label_ids, batch_first=True, padding_value=-100)
     attention_mask = (input_ids_padded != encoder_tokenizer.pad_token_id).long()
-    label_ids = torch.stack(label_ids)
+    # label_ids = torch.stack(label_ids)
     # label_ids = label_ids.unsqueeze(1)  # [batch, 1]
-    return {"input_ids": input_ids_padded, "attention_mask": attention_mask, "labels": label_ids}
+    return {"input_ids": input_ids_padded, "attention_mask": attention_mask, "labels": label_ids_padded}
 
 # MySeq2SeqTrainer集成
 from hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArguments
@@ -388,8 +385,6 @@ class ClsTrainer(MySeq2SeqTrainer):
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         self.model.eval()
         device = self.args.device if hasattr(self.args, 'device') else self.model.device
-        all_preds = []
-        all_labels = []
         total_loss = 0.0
         debug_print_samples = []
         with torch.no_grad():
@@ -397,39 +392,29 @@ class ClsTrainer(MySeq2SeqTrainer):
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device) if "attention_mask" in batch else None
                 labels = batch["labels"].to(device)
+                labels_len = labels.size(1)
                 outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+                # labels = labels.view(-1)
                 loss = outputs.loss
                 logits = outputs.logits
-                preds = logits.argmax(dim=-1)[:, 1]
-                all_preds.append(preds.detach().cpu())
-                all_labels.append(labels.detach().cpu())
+                preds = logits.argmax(dim=-1)[:, :labels_len]
                 total_loss += loss.item() * labels.size(0)
                 # 收集前10条数据的预测和真实token及解码，全部预测完后统一打印
                 if len(debug_print_samples) < 10:
                     for i in range(min(labels.size(0), 10 - len(debug_print_samples))):
-                        pred_token = preds[i].item()
-                        label_token = labels[i].item()
-                        pred_word = self.tokenizer.decode([pred_token]) if self.tokenizer is not None else str(pred_token)
-                        label_word = self.tokenizer.decode([label_token]) if self.tokenizer is not None else str(label_token)
+                        pred_token = preds[i]
+                        label_token = labels[i]
+                        pred_word = self.tokenizer.decode(pred_token) if self.tokenizer is not None else str(pred_token)
+                        label_word = self.tokenizer.decode(label_token) if self.tokenizer is not None else str(label_token)
                         debug_print_samples.append((pred_word, pred_token, label_word, label_token))
-        # 拼接所有预测和标签，直接计算准确率
-        all_preds = torch.cat(all_preds, dim=0).numpy()  # [N] - token ids
-        all_labels = torch.cat(all_labels, dim=0).numpy()  # [N]
-        # 直接计算准确率，不再调用compute_metrics
-        correct = (all_preds == all_labels).sum()
-        total = all_labels.shape[0]
-        # 修正准确率计算，确保为比例（0~1），不是数量
-        accuracy = float(correct) / float(total) if total > 0 else 0.0
-        metrics = {"accuracy": round(accuracy, 4)}
-        avg_loss = total_loss / total if total > 0 else 0.0
-        # 统一打印前10条预测和真实token
+        avg_loss = total_loss / len(eval_dataset) if len(eval_dataset) > 0 else 0.0
         if debug_print_samples:
             print("[EVAL DEBUG] 前10条样本预测与真实token:")
             for idx, (pred_word, pred_token, label_word, label_token) in enumerate(debug_print_samples):
                 print(f"[EVAL DEBUG] 样本{idx+1}: 预测='{pred_word}' (id:{pred_token}), 真实='{label_word}' (id:{label_token})")
-        print(f"[Custom Eval] Loss: {avg_loss:.4f}  Accuracy: {accuracy:.4f}  (Total: {total})")
+        print(f"[Custom Eval] Loss: {avg_loss:.4f}  (Total: {len(eval_dataset)})")
         self.model.train()
-        return avg_loss, metrics
+        return avg_loss, {}
 
 trainer = ClsTrainer(
     model=model,

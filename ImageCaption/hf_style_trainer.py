@@ -37,7 +37,7 @@ class MySeq2SeqTrainer:
                 except ImportError:
                     print('tensorboard not installed, skipping tensorboard logging.')
 
-    def train(self, resume_from_checkpoint=None, model_already_loaded=False):
+    def train(self, resume_from_checkpoint=None):
         """
         训练函数
         Args:
@@ -68,98 +68,85 @@ class MySeq2SeqTrainer:
         if resume_from_checkpoint is not None:
             checkpoint_dir = resume_from_checkpoint
             print(f"尝试从 checkpoint 恢复: {checkpoint_dir}")
+            print("执行完整的模型权重恢复...")
+            # 保存原始模型的重要配置
+            was_gradient_checkpointing = getattr(self.model, 'gradient_checkpointing', False)
+            # 检查是否是 PEFT 模型
+            is_peft_model = False
+            try:
+                from peft import PeftModel
+                is_peft_model = isinstance(self.model, PeftModel)
+                if is_peft_model:
+                    print("检测到 PEFT 模型")
+            except ImportError:
+                pass
+            # 恢复模型权重 - 采用原地更新而不是重新创建
+            try:
+                if is_peft_model:
+                    # PEFT 模型：使用特殊的恢复方式
+                    print("使用 PEFT 模型恢复方式")
+                    base_model = self.model.get_base_model()
+                    self.model = PeftModel.from_pretrained(base_model, checkpoint_dir)
+                else:
+                    # 普通模型：尝试原地加载权重
+                    print("尝试原地加载模型权重...")
+                    # 优先尝试加载 safetensors 格式
+                    weight_files = ["model.safetensors", "pytorch_model.bin"]
+                    loaded = False
+                    
+                    for weight_file in weight_files:
+                        weight_path = os.path.join(checkpoint_dir, weight_file)
+                        if os.path.exists(weight_path):
+                            try:
+                                print(f"加载权重文件: {weight_file}")
+                                if weight_file.endswith('.safetensors'):
+                                    from safetensors.torch import load_file
+                                    state_dict = load_file(weight_path)
+                                else:
+                                    state_dict = torch.load(weight_path, map_location=self.device)
+                                
+                                # 原地加载权重，保持模型结构不变
+                                missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+                                if missing_keys:
+                                    print(f"缺失的键: {len(missing_keys)} 个")
+                                if unexpected_keys:
+                                    print(f"意外的键: {len(unexpected_keys)} 个")
+                                print(f"✓ 成功原地加载权重: {weight_file}")
+                                loaded = True
+                                break
+                            except Exception as e:
+                                print(f"加载 {weight_file} 失败: {e}")
+                                continue
+                    
+                    if not loaded:
+                        print("原地加载失败，尝试 from_pretrained 方式...")
+                        self.model = self.model.from_pretrained(checkpoint_dir)
+                        print("⚠️ 使用了 from_pretrained，可能需要重新配置模型")
+                        
+            except Exception as e:
+                print(f"模型恢复失败: {e}")
+                print("跳过模型恢复，使用原始模型权重")
             
-            if not model_already_loaded:
-                # 模型权重还未加载，需要进行完整的模型恢复
-                print("执行完整的模型权重恢复...")
-                
-                # 保存原始模型的重要配置
-                was_gradient_checkpointing = getattr(self.model, 'gradient_checkpointing', False)
-                
-                # 检查是否是 PEFT 模型
-                is_peft_model = False
+            # 确保模型在正确设备上
+            self.model.to(self.device)
+            
+            # 恢复梯度检查点设置
+            if was_gradient_checkpointing and hasattr(self.model, 'gradient_checkpointing_enable'):
+                print("重新启用梯度检查点")
+                self.model.gradient_checkpointing_enable()
+            
+            # 恢复分词器
+            if self.tokenizer is not None:
                 try:
-                    from peft import PeftModel
-                    is_peft_model = isinstance(self.model, PeftModel)
-                    if is_peft_model:
-                        print("检测到 PEFT 模型")
-                except ImportError:
-                    pass
-                
-                # 恢复模型权重 - 采用原地更新而不是重新创建
-                try:
-                    if is_peft_model:
-                        # PEFT 模型：使用特殊的恢复方式
-                        print("使用 PEFT 模型恢复方式")
-                        base_model = self.model.get_base_model()
-                        self.model = PeftModel.from_pretrained(base_model, checkpoint_dir)
-                    else:
-                        # 普通模型：尝试原地加载权重
-                        print("尝试原地加载模型权重...")
-                        # 优先尝试加载 safetensors 格式
-                        weight_files = ["pytorch_model.safetensors", "pytorch_model.bin"]
-                        loaded = False
-                        
-                        for weight_file in weight_files:
-                            weight_path = os.path.join(checkpoint_dir, weight_file)
-                            if os.path.exists(weight_path):
-                                try:
-                                    print(f"加载权重文件: {weight_file}")
-                                    if weight_file.endswith('.safetensors'):
-                                        from safetensors.torch import load_file
-                                        state_dict = load_file(weight_path)
-                                    else:
-                                        state_dict = torch.load(weight_path, map_location=self.device)
-                                    
-                                    # 原地加载权重，保持模型结构不变
-                                    missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
-                                    if missing_keys:
-                                        print(f"缺失的键: {len(missing_keys)} 个")
-                                    if unexpected_keys:
-                                        print(f"意外的键: {len(unexpected_keys)} 个")
-                                    print(f"✓ 成功原地加载权重: {weight_file}")
-                                    loaded = True
-                                    break
-                                except Exception as e:
-                                    print(f"加载 {weight_file} 失败: {e}")
-                                    continue
-                        
-                        if not loaded:
-                            print("原地加载失败，尝试 from_pretrained 方式...")
-                            self.model = self.model.from_pretrained(checkpoint_dir)
-                            print("⚠️ 使用了 from_pretrained，可能需要重新配置模型")
-                            
-                except Exception as e:
-                    print(f"模型恢复失败: {e}")
-                    print("跳过模型恢复，使用原始模型权重")
-                
-                # 确保模型在正确设备上
-                self.model.to(self.device)
-                
-                # 恢复梯度检查点设置
-                if was_gradient_checkpointing and hasattr(self.model, 'gradient_checkpointing_enable'):
-                    print("重新启用梯度检查点")
-                    self.model.gradient_checkpointing_enable()
-                
-                # 恢复分词器
-                if self.tokenizer is not None:
-                    try:
-                        self.tokenizer = self.tokenizer.from_pretrained(checkpoint_dir)
-                        print("✓ 恢复分词器")
-                    except:
-                        print("分词器恢复失败，使用原始分词器")
-                
-                print(f"✓ 模型恢复完成，设备: {self.model.device}")
-                print(f"✓ 模型类型: {type(self.model)}")
-                if hasattr(self.model, 'gradient_checkpointing'):
-                    print(f"✓ 梯度检查点: {self.model.gradient_checkpointing}")
-            else:
-                # 模型权重已经预先加载，跳过模型恢复，只恢复训练状态
-                print("✓ 模型权重已预先加载，跳过模型恢复步骤")
-                print(f"✓ 当前模型设备: {self.model.device}")
-                print(f"✓ 当前模型类型: {type(self.model)}")
-                if hasattr(self.model, 'gradient_checkpointing'):
-                    print(f"✓ 梯度检查点状态: {self.model.gradient_checkpointing}")
+                    self.tokenizer = self.tokenizer.from_pretrained(checkpoint_dir)
+                    print("✓ 恢复分词器")
+                except:
+                    print("分词器恢复失败，使用原始分词器")
+            
+            print(f"✓ 模型恢复完成，设备: {self.model.device}")
+            print(f"✓ 模型类型: {type(self.model)}")
+            if hasattr(self.model, 'gradient_checkpointing'):
+                print(f"✓ 梯度检查点: {self.model.gradient_checkpointing}")
             
             # 恢复训练状态计数器（无论模型是否预加载都需要恢复）
             state_path = os.path.join(checkpoint_dir, "trainer_state.pt")
