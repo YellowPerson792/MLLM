@@ -210,6 +210,18 @@ class MySeq2SeqTrainer:
             progress_bar.last_print_n = global_step
             progress_bar.refresh()
 
+        # 训练开始前的检查
+        print(f"\n==== 训练前检查 ====")
+        print(f"模型设备: {next(self.model.parameters()).device}")
+        print(f"Trainer设备: {self.device}")
+        print(f"模型类型: {type(self.model)}")
+        
+        # 检查可训练参数
+        trainable_count = sum(1 for p in self.model.parameters() if p.requires_grad)
+        total_count = sum(1 for p in self.model.parameters())
+        print(f"可训练参数: {trainable_count} / {total_count}")
+        print("==== 检查完成 ====\n")
+
         for epoch in range(start_epoch, args.num_train_epochs):
             epoch_loss = 0
             optimizer.zero_grad()
@@ -225,6 +237,16 @@ class MySeq2SeqTrainer:
                 # attention_mask支持
                 if 'attention_mask' in batch:
                     model_inputs['attention_mask'] = batch['attention_mask'].to(self.device)
+                
+                # 调试：第一个batch检查设备一致性
+                if global_step == 0:
+                    print(f"[DEBUG] 第一个batch设备检查:")
+                    print(f"  input_ids设备: {model_inputs[input_name].device}")
+                    print(f"  labels设备: {model_inputs['labels'].device}")
+                    if 'attention_mask' in model_inputs:
+                        print(f"  attention_mask设备: {model_inputs['attention_mask'].device}")
+                    print(f"  模型设备: {next(self.model.parameters()).device}")
+                
                 with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16 if args.bf16 else torch.float16):
                     outputs = self.model(**model_inputs)
                     loss = outputs.loss / args.gradient_accumulation_steps
@@ -391,7 +413,17 @@ class MySeq2SeqTrainer:
 
     def _compute_grad_norm(self):
         """计算模型梯度范数"""
-        return sum((p.grad.data.norm(2).item() ** 2 for p in self.model.parameters() if p.grad is not None)) ** 0.5
+        total_norm = 0.0
+        param_count = 0
+        for p in self.model.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+                param_count += 1
+        
+        if param_count == 0:
+            return 0.0
+        return total_norm ** 0.5
 
 import os
 import shutil

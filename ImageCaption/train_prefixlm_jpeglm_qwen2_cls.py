@@ -1,5 +1,5 @@
 # 示例运行命令：
-# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_gpt2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
+# python /root/autodl-tmp/MLLM/ImageCaption/train_prefixlm_jpeglm_qwen2_cls.py --train_batch_size 2 --eval_batch_size 2 --eval_strategy steps --eval_steps 128 --logging_steps 64 --save_steps 512 --warmup_steps 512 --learning_rate 2e-4 --num_train_epochs 3 --save_total_limit 6 --lr_scheduler_type linear --gradient_accumulation_steps 8 --report_to none --bf16 --max_length 1024 --image_size 96 --num_train_samples 6000 --num_eval_samples 16
 
 import os
 import sys
@@ -10,7 +10,7 @@ from PIL import Image
 from tqdm import tqdm
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
-from transformers import AutoTokenizer, AutoConfig, GPT2LMHeadModel, GenerationConfig, PreTrainedModel, GenerationMixin
+from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, GenerationConfig, PreTrainedModel, GenerationMixin
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.encoder_decoder.modeling_encoder_decoder import shift_tokens_right
 from torch.nn import CrossEntropyLoss
@@ -22,7 +22,7 @@ from peft import get_peft_model, LoraConfig, TaskType
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/prefixlm-jpeglm-gpt2-mnist-classification")
+parser.add_argument('--output_dir', type=str, default="/root/autodl-tmp/MLLM/checkpoints/prefixlm-jpeglm-qwen2-mnist-classification")
 parser.add_argument('--train_batch_size', type=int, default=8)
 parser.add_argument('--eval_batch_size', type=int, default=8)
 parser.add_argument('--num_train_epochs', type=int, default=3)
@@ -52,21 +52,23 @@ digit_to_text = {i: s for i, s in enumerate(cls_vocab)}
 
 # 加载tokenizer和模型
 encoder_tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/MLLM/models/jpeg-lm")
-decoder_tokenizer = AutoTokenizer.from_pretrained("gpt2")
-decoder_tokenizer.pad_token = decoder_tokenizer.unk_token
+decoder_tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2-0.5B")
+# Qwen2的pad_token默认为eos_token
+if decoder_tokenizer.pad_token is None:
+    decoder_tokenizer.pad_token = decoder_tokenizer.eos_token
 
-# 将tiny_vocab中的单词转换为GPT2 tokenizer中的token IDs
-gpt2_token_ids = {}
+# 将tiny_vocab中的单词转换为Qwen2 tokenizer中的token IDs
+qwen2_token_ids = {}
 for word in cls_vocab:
     token_ids = decoder_tokenizer.encode(word, add_special_tokens=False)
     if len(token_ids) == 1:
-        gpt2_token_ids[word] = token_ids[0]
+        qwen2_token_ids[word] = token_ids[0]
     else:
         print(f"警告: '{word}' 被tokenize为多个token: {token_ids}")
-        gpt2_token_ids[word] = token_ids[0]  # 取第一个token
+        qwen2_token_ids[word] = token_ids[0]  # 取第一个token
 
-gpt2_config = AutoConfig.from_pretrained("gpt2")
-gpt2_model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
+qwen2_config = AutoConfig.from_pretrained("Qwen/Qwen2-0.5B")
+qwen2_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2-0.5B").to(device)
 
 # 加载JpegLM池化encoder
 jpeglm_encoder = create_jpeglm_encoder_with_pooling("/root/autodl-tmp/MLLM/models/jpeg-lm", pooling_strategy='last').to(device)
@@ -83,7 +85,7 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         self.encoder = encoder
         self.decoder = decoder
         # 将投影层集成到模型内部，作为transformer结构的一部分
-        self.encoder_decoder_proj = torch.nn.Linear(encoder.config.hidden_size, decoder.config.n_embd)
+        self.encoder_decoder_proj = torch.nn.Linear(encoder.config.hidden_size, decoder.config.hidden_size)
         self.decoder_tokenizer = decoder_tokenizer
         self.bos_token_id = bos_token_id
 
@@ -135,7 +137,8 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         # 直接将prefix_embeds与labels的embeds拼接
         if labels is not None:
             # labels为token id序列，获取其embedding
-            label_embeds = self.decoder.transformer.wte(labels)
+            # Qwen2的词嵌入层路径与GPT2不同
+            label_embeds = self.decoder.model.embed_tokens(labels)
             final_inputs_embeds = torch.cat([prefix_embeds, label_embeds], dim=1)
         elif decoder_inputs_embeds is not None:
             final_inputs_embeds = torch.cat([prefix_embeds, decoder_inputs_embeds], dim=1)
@@ -220,7 +223,7 @@ class PrefixLMForClassification(PreTrainedModel, GenerationMixin):
         print("!!!!!!!!!!!!!!!!!!")
         
         # 确保config参数存在
-        pad_token_id = getattr(self.config, 'pad_token_id', self.decoder_tokenizer.pad_token_id or self.decoder_tokenizer.unk_token_id)
+        pad_token_id = getattr(self.config, 'pad_token_id', self.decoder_tokenizer.pad_token_id or self.decoder_tokenizer.eos_token_id)
         decoder_start_token_id = getattr(self.config, 'decoder_start_token_id', self.bos_token_id)
         
         return shift_tokens_right(labels, pad_token_id, decoder_start_token_id)
@@ -277,9 +280,9 @@ class MNISTJpegBytesPrefixDataset(Dataset):
         jpeg_str = convert_img_to_bytes(img)
         input_ids = [self.encoder_tokenizer.bos_token_id] + self.encoder_tokenizer(jpeg_str, add_special_tokens=False)["input_ids"]
         input_ids = input_ids[:self.max_length]
-        # 使用GPT2 tokenizer中的真实token ID
+        # 使用Qwen2 tokenizer中的真实token ID
         caption = self.digit_to_text[label]
-        # label_token_id = gpt2_token_ids[caption]
+        # label_token_id = qwen2_token_ids[caption]
         # label_token_id = self.decoder_tokenizer.encode(caption, add_special_tokens=False)
         return {"input_ids": torch.tensor(input_ids), "caption": caption}
 
@@ -311,12 +314,12 @@ def collate_fn(batch):
 
 # MySeq2SeqTrainer集成
 from hf_style_trainer import MySeq2SeqTrainer, MySeq2SeqTrainingArguments
-bos_token_id = decoder_tokenizer.bos_token_id or decoder_tokenizer.eos_token_id or 50256
+bos_token_id = decoder_tokenizer.bos_token_id or decoder_tokenizer.eos_token_id or 151643  # Qwen2的默认bos_token_id
 
 # 在模型外部确保特殊token id全部设置到config
-model = PrefixLMForClassification(jpeglm_encoder, gpt2_model, decoder_tokenizer, bos_token_id)
+model = PrefixLMForClassification(jpeglm_encoder, qwen2_model, decoder_tokenizer, bos_token_id)
 model.config.decoder_start_token_id = bos_token_id
-model.config.pad_token_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.unk_token_id
+model.config.pad_token_id = decoder_tokenizer.pad_token_id or decoder_tokenizer.eos_token_id
 
 # 确保整个模型在正确的device上
 model = model.to(device)
@@ -342,15 +345,16 @@ my_args = MySeq2SeqTrainingArguments(
 )
     
 
-# 获取GPT2所有关键模块名称，作为modules_to_save
-h_modules = [f"decoder.transformer.h.{i}" for i in range(model.decoder.config.n_layer)]
-gpt2_modules = h_modules + [
-    "decoder.transformer.ln_f",
-    "decoder.lm_head",
+# 获取Qwen2所有关键模块名称，作为modules_to_save
+# Qwen2模型结构与GPT2不同，需要调整模块名称
+h_modules = [f"decoder.model.layers.{i}" for i in range(model.decoder.config.num_hidden_layers)]
+qwen2_modules = [
+    # "decoder.model.norm",  # Qwen2的最终层归一化
+    # "decoder.lm_head",     # 语言模型头
 ]
 
 # 添加其他需要保存的模块
-modules_to_save = gpt2_modules + [
+modules_to_save = qwen2_modules + [
     "encoder_decoder_proj"  # 集成到模型内部的投影层
 ]
 
@@ -364,11 +368,12 @@ lora_config = LoraConfig(
         "q_proj", "k_proj", "v_proj", "o_proj",  # attention层
         "gate_proj", "up_proj", "down_proj",     # MLP层  
     ],
-    modules_to_save=modules_to_save,  # 保存GPT2全部模块和投影层
+    modules_to_save=modules_to_save,  # 保存Qwen2全部模块和投影层
     lora_dropout=0.1,
 )
 
 model.encoder.gradient_checkpointing_enable()
+model.decoder.gradient_checkpointing_enable()
 model = get_peft_model(model, lora_config)
 
 # 打印LoRA训练参数统计
